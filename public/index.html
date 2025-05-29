@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cPanel Bulk Creator</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body>
+    <!-- Particle Background -->
+    <div id="particles-js"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>⚡ cPanel Bulk Creator</h1>
+                <p>Efficient bulk account creation through WHM API</p>
+            </div>
+            <div class="header-stats">
+                <div class="connection-status" id="connectionStatus">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- WHM Credentials -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔗 WHM Connection</h2>
+                    <div class="card-actions">
+                        <button type="button" class="btn btn-primary" id="testConnectionBtn" disabled>
+                            Test Connection
+                        </button>
+                    </div>
+                </div>
+                
+                <form class="form" id="credentialsForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="whmHost">Server Host</label>
+                            <input type="text" class="form-input" id="whmHost" placeholder="server.example.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="whmPort">Port</label>
+                            <input type="number" class="form-input" id="whmPort" value="2087" min="1" max="65535" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="whmUsername">Username</label>
+                            <input type="text" class="form-input" id="whmUsername" placeholder="root" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="authMethod">Authentication</label>
+                            <select class="form-select" id="authMethod" required>
+                                <option value="token">API Token</option>
+                                <option value="password">Password</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" id="apiTokenGroup">
+                        <label class="form-label" for="whmApiToken">API Token</label>
+                        <input type="password" class="form-input" id="whmApiToken" placeholder="WHM API Token">
+                        <small class="form-help">Generate from WHM → Development → API Tokens</small>
+                    </div>
+                    
+                    <div class="form-group hidden" id="passwordGroup">
+                        <label class="form-label" for="whmPassword">Root Password</label>
+                        <input type="password" class="form-input" id="whmPassword" placeholder="Root password">
+                    </div>
+
+                    <div class="checkbox-group">
+                        <input type="checkbox" class="checkbox-input" id="whmSsl" checked>
+                        <label class="checkbox-label" for="whmSsl">Use SSL (HTTPS)</label>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Account Configuration -->
+            <section class="card">
+                <div class="card-header">
+                    <h2 class="card-title">⚙️ Account Settings</h2>
+                </div>
+                
+                <form class="form" id="configForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="packagePlan">Package/Plan</label>
+                            <select class="form-select" id="packagePlan">
+                                <option value="">Default Package</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="quota">Disk Quota (MB)</label>
+                            <input type="text" class="form-input" id="quota" placeholder="unlimited">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="bwlimit">Bandwidth (MB)</label>
+                            <input type="text" class="form-input" id="bwlimit" placeholder="unlimited">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox-input" id="hasshell">
+                            <label class="checkbox-label" for="hasshell">Shell Access</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox-input" id="cgi" checked>
+                            <label class="checkbox-label" for="cgi">CGI Access</label>
+                        </div>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Domain List -->
+            <section class="card full-width">
+                <div class="card-header">
+                    <h2 class="card-title">🌐 Domain List</h2>
+                    <div class="card-actions">
+                        <button type="button" class="btn btn-secondary" id="validateDomainsBtn" disabled>
+                            Validate
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="clearDomainsBtn">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="domainList">Domains (one per line)</label>
+                    <textarea class="form-textarea" id="domainList" rows="8" placeholder="example1.com&#10;example2.com&#10;example3.com" required></textarea>
+                    <small class="form-help">Enter one domain per line. Invalid domains and duplicates will be detected automatically.</small>
+                </div>
+                
+                <div id="domainValidation" class="validation-results hidden">
+                    <div class="validation-summary">
+                        <div class="validation-item">
+                            <span class="validation-label">Total</span>
+                            <span class="validation-value" id="totalDomains">0</span>
+                        </div>
+                        <div class="validation-item valid">
+                            <span class="validation-label">Valid</span>
+                            <span class="validation-value" id="validDomains">0</span>
+                        </div>
+                        <div class="validation-item invalid">
+                            <span class="validation-label">Invalid</span>
+                            <span class="validation-value" id="invalidDomains">0</span>
+                        </div>
+                        <div class="validation-item duplicate">
+                            <span class="validation-label">Duplicates</span>
+                            <span class="validation-value" id="duplicateDomains">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="validation-details">
+                        <div id="invalidList" class="validation-list hidden">
+                            <h4>Invalid Domains:</h4>
+                            <ul id="invalidDomainsUl"></ul>
+                        </div>
+                        <div id="duplicateList" class="validation-list hidden">
+                            <h4>Duplicate Domains:</h4>
+                            <ul id="duplicateDomainsUl"></ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Control Panel -->
+            <section class="card full-width control-section">
+                <div class="card-header">
+                    <h2 class="card-title">🚀 Control Panel</h2>
+                </div>
+                
+                <div class="control-buttons">
+                    <button type="button" class="btn btn-primary btn-large" id="startCreationBtn" disabled>
+                        <span class="btn-icon">▶️</span>
+                        Start Bulk Creation
+                    </button>
+                    <button type="button" class="btn btn-danger btn-large hidden" id="stopCreationBtn">
+                        <span class="btn-icon">⏹️</span>
+                        Stop Process
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Process Monitor -->
+        <section class="card full-width hidden" id="monitorSection">
+            <div class="card-header">
+                <h2 class="card-title">📊 Process Monitor</h2>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-secondary" id="clearLogsBtn">
+                        Clear Logs
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Progress -->
+            <div class="progress-container">
+                <div class="progress-info">
+                    <span id="progressText">Ready to start...</span>
+                    <span id="progressPercentage">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            
+            <!-- Statistics -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="processedCount">0</div>
+                    <div class="stat-label">Processed</div>
+                </div>
+                <div class="stat-card success">
+                    <div class="stat-number" id="successCount">0</div>
+                    <div class="stat-label">Successful</div>
+                </div>
+                <div class="stat-card error">
+                    <div class="stat-number" id="failedCount">0</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-number" id="skippedCount">0</div>
+                    <div class="stat-label">Skipped</div>
+                </div>
+            </div>
+            
+            <!-- Live Logs -->
+            <div class="logs-container">
+                <div class="logs-header">
+                    <h3 class="logs-title">📝 Live Logs</h3>
+                    <div class="logs-controls">
+                        <div class="checkbox-group">
+                            <input type="checkbox" class="checkbox-input" id="autoScrollLogs" checked>
+                            <label class="checkbox-label" for="autoScrollLogs">Auto-scroll</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="logs-content" id="logsContent">
+                    <div class="log-entry">
+                        <span class="log-time">[00:00:00]</span>
+                        <span class="log-level INFO">INFO</span>
+                        <span class="log-message">System ready. Configure WHM connection and start bulk creation.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Successful Accounts Display -->
+        <section class="card full-width hidden" id="successfulAccountsSection">
+            <div class="card-header">
+                <h2 class="card-title">✅ Created Accounts</h2>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-primary" id="exportTextBtn" disabled>
+                        Export Text
+                    </button>
+                </div>
+            </div>
+            
+            <div id="successfulAccountsList" class="successful-accounts-list">
+                <div class="empty-state">
+                    <p>No accounts created yet. Start the bulk creation process to see results here.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="card full-width hidden" id="resultsSection">
+            <div class="card-header">
+                <h2 class="card-title">📋 Results</h2>
+                <div class="card-actions">
+                    <select class="form-select" id="resultsFilter">
+                        <option value="all">Show All</option>
+                        <option value="successful">Successful Only</option>
+                        <option value="failed">Failed Only</option>
+                        <option value="skipped">Skipped Only</option>
+                    </select>
+                    <button type="button" class="btn btn-secondary" id="copyResultsBtn">
+                        Copy to Clipboard
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="downloadCsvBtn">
+                        Download CSV
+                    </button>
+                </div>
+            </div>
+            
+            <div class="results-container">
+                <table class="results-table" id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Domain</th>
+                            <th>Username</th>
+                            <th>Password</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loadingText">Processing...</div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

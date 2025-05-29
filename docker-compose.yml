@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  cpanel-bulk-creator:
+    build: .
+    container_name: cpanel-bulk-creator
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SESSION_SECRET=${SESSION_SECRET:-your-super-secret-session-key-here}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-32-character-encryption-key-here}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - MAX_CONCURRENT_ACCOUNTS=${MAX_CONCURRENT_ACCOUNTS:-5}
+      - REQUEST_TIMEOUT=${REQUEST_TIMEOUT:-30000}
+      - BATCH_SIZE=${BATCH_SIZE:-10}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - cpanel-network
+
+  # Optional: Add a reverse proxy (uncomment if needed)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: cpanel-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - cpanel-bulk-creator
+  #   restart: unless-stopped
+  #   networks:
+  #     - cpanel-network
+
+networks:
+  cpanel-network:
+    driver: bridge
+
+volumes:
+  logs:
+  data:
