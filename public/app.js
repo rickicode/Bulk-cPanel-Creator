@@ -77,6 +77,14 @@ class BulkCreatorApp {
             whmApiToken: document.getElementById('whmApiToken'),
             whmPassword: document.getElementById('whmPassword'),
             
+            // Cloudflare DNS
+            cfEmail: document.getElementById('cfEmail'),
+            cfApiKey: document.getElementById('cfApiKey'),
+            cfRecordType: document.getElementById('cfRecordType'),
+            cfRecordValue: document.getElementById('cfRecordValue'),
+            cfValueGroup: document.getElementById('cfValueGroup'),
+            cfValueHelp: document.getElementById('cfValueHelp'),
+            
             // Config
             packagePlan: document.getElementById('packagePlan'),
             
@@ -85,6 +93,7 @@ class BulkCreatorApp {
             
             // Buttons
             testConnectionBtn: document.getElementById('testConnectionBtn'),
+            testCfConnectionBtn: document.getElementById('testCfConnectionBtn'),
             validateDomainsBtn: document.getElementById('validateDomainsBtn'),
             clearDomainsBtn: document.getElementById('clearDomainsBtn'),
             startCreationBtn: document.getElementById('startCreationBtn'),
@@ -152,9 +161,22 @@ class BulkCreatorApp {
             });
         });
 
+        // Cloudflare form input changes
+        ['cfEmail', 'cfApiKey', 'cfRecordValue'].forEach(field => {
+            this.elements[field].addEventListener('input', () => {
+                this.validateCloudflareFields();
+            });
+        });
+
         // SSL select change
         this.elements.whmSsl.addEventListener('change', () => {
             this.validateCredentialFields();
+        });
+
+        // Cloudflare record type change
+        this.elements.cfRecordType.addEventListener('change', () => {
+            this.toggleCloudflareRecordType();
+            this.validateCloudflareFields();
         });
 
         this.elements.domainList.addEventListener('input', () => {
@@ -164,6 +186,10 @@ class BulkCreatorApp {
         // Button clicks
         this.elements.testConnectionBtn.addEventListener('click', () => {
             this.testWhmConnection();
+        });
+
+        this.elements.testCfConnectionBtn.addEventListener('click', () => {
+            this.testCloudflareConnection();
         });
 
         this.elements.validateDomainsBtn.addEventListener('click', () => {
@@ -237,6 +263,33 @@ class BulkCreatorApp {
             ((method === 'token' && token) || (method === 'password' && password));
 
         this.elements.testConnectionBtn.disabled = !isValid;
+    }
+
+    /**
+     * Validate Cloudflare credentials and enable/disable test button
+     */
+    validateCloudflareFields() {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+        const recordValue = this.elements.cfRecordValue.value.trim();
+
+        const isValid = email && apiKey && recordValue;
+        this.elements.testCfConnectionBtn.disabled = !isValid;
+    }
+
+    /**
+     * Toggle Cloudflare record type UI
+     */
+    toggleCloudflareRecordType() {
+        const recordType = this.elements.cfRecordType.value;
+        
+        if (recordType === 'A') {
+            this.elements.cfRecordValue.placeholder = 'IP Address (e.g., 192.168.1.100)';
+            this.elements.cfValueHelp.textContent = 'Enter IP address for A record';
+        } else if (recordType === 'CNAME') {
+            this.elements.cfRecordValue.placeholder = 'Domain (e.g., target.example.com)';
+            this.elements.cfValueHelp.textContent = 'Enter target domain for CNAME record';
+        }
     }
 
     /**
@@ -416,11 +469,36 @@ class BulkCreatorApp {
             console.warn('Failed to load saved WHM connection data:', error);
         }
 
+        // Load saved Cloudflare connection data if exists
+        try {
+            const savedCfDataEncoded = localStorage.getItem('bulkCreator_cloudflareConnection');
+            if (savedCfDataEncoded) {
+                let savedCfData;
+                try {
+                    savedCfData = JSON.parse(atob(savedCfDataEncoded));
+                } catch (e) {
+                    // Fallback for old unencoded format
+                    savedCfData = JSON.parse(savedCfDataEncoded);
+                }
+                
+                if (savedCfData.email) {
+                    this.elements.cfEmail.value = savedCfData.email || '';
+                    this.elements.cfApiKey.value = savedCfData.apiKey || '';
+                    this.elements.cfRecordType.value = savedCfData.recordType || 'A';
+                    this.elements.cfRecordValue.value = savedCfData.recordValue || '';
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load saved Cloudflare connection data:', error);
+        }
+
         this.toggleAuthMethod();
+        this.toggleCloudflareRecordType();
         
         // Ensure validation runs after data is loaded
         setTimeout(() => {
             this.validateCredentialFields();
+            this.validateCloudflareFields();
             this.validateDomainFields();
         }, 100);
     }
@@ -481,11 +559,39 @@ class BulkCreatorApp {
             port: parseInt(this.elements.whmPort.value) || 2087,
             username: this.elements.whmUsername.value.trim(),
             ssl: this.elements.whmSsl.value === 'true',
-            ...(this.elements.authMethod.value === 'token' 
+            ...(this.elements.authMethod.value === 'token'
                 ? { apiToken: this.elements.whmApiToken.value.trim() }
                 : { password: this.elements.whmPassword.value.trim() }
             )
         };
+    }
+
+    /**
+     * Get Cloudflare credentials from form
+     */
+    getCloudflareCredentials() {
+        return {
+            email: this.elements.cfEmail.value.trim(),
+            apiKey: this.elements.cfApiKey.value.trim(),
+            recordType: this.elements.cfRecordType.value,
+            recordValue: this.elements.cfRecordValue.value.trim()
+        };
+    }
+
+    /**
+     * Save Cloudflare connection data to localStorage
+     */
+    saveCloudflareConnectionData() {
+        const cfData = {
+            email: this.elements.cfEmail.value.trim(),
+            apiKey: this.elements.cfApiKey.value.trim(),
+            recordType: this.elements.cfRecordType.value,
+            recordValue: this.elements.cfRecordValue.value.trim()
+        };
+
+        // Simple encoding for localStorage (not real encryption, but better than plain text)
+        const encodedData = btoa(JSON.stringify(cfData));
+        localStorage.setItem('bulkCreator_cloudflareConnection', encodedData);
     }
 
     /**
@@ -531,6 +637,49 @@ class BulkCreatorApp {
             console.error('WHM test error:', error);
             this.showToast('error', 'Failed to test connection');
             this.addLog('error', `Connection test error: ${error.message}`);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
+     * Test Cloudflare connection
+     */
+    async testCloudflareConnection() {
+        this.showLoading('Testing Cloudflare connection...');
+        
+        try {
+            const credentials = this.getCloudflareCredentials();
+            
+            const response = await fetch('/api/cloudflare/validate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ cloudflareCredentials: credentials })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showToast('success', `Cloudflare connection successful! Account: ${result.data.email}`);
+                this.addLog('info', `Cloudflare connection verified - Account: ${result.data.email}`);
+                
+                // Save Cloudflare connection data for future use
+                this.saveCloudflareConnectionData();
+                
+                // Mark Cloudflare as connected
+                this.isCloudflareConnected = true;
+            } else {
+                this.showToast('error', `Cloudflare connection failed: ${result.error}`);
+                this.addLog('error', `Cloudflare connection failed: ${result.error}`);
+                this.isCloudflareConnected = false;
+            }
+
+        } catch (error) {
+            console.error('Cloudflare test error:', error);
+            this.showToast('error', 'Failed to test Cloudflare connection');
+            this.addLog('error', `Cloudflare connection test error: ${error.message}`);
         } finally {
             this.hideLoading();
         }
@@ -700,6 +849,13 @@ class BulkCreatorApp {
                 domains: this.validationResults.valid,
                 plan: this.elements.packagePlan.value
             };
+
+            // Add Cloudflare credentials if provided
+            const cfEmail = this.elements.cfEmail.value.trim();
+            const cfApiKey = this.elements.cfApiKey.value.trim();
+            if (cfEmail && cfApiKey) {
+                requestData.cloudflareCredentials = this.getCloudflareCredentials();
+            }
 
             const response = await fetch('/api/bulk/create', {
                 method: 'POST',
@@ -1176,12 +1332,32 @@ class BulkCreatorApp {
      */
     showToast(type, message, duration = 5000) {
         const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
+        toast.className = `toast ${type}`;
+        
+        // Icons for different toast types
+        const icons = {
+            success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                      </svg>`,
+            error: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>`,
+            warning: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                      </svg>`,
+            info: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                   </svg>`
+        };
+        
         toast.innerHTML = `
-            <div class="toast-content">
-                <span class="toast-message">${message}</span>
-                <button class="toast-close">&times;</button>
-            </div>
+            ${icons[type] || icons.info}
+            <span class="toast-message">${message}</span>
+            <button class="toast-close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+            </button>
         `;
 
         this.elements.toastContainer.appendChild(toast);
@@ -1189,20 +1365,25 @@ class BulkCreatorApp {
         // Close button functionality
         const closeBtn = toast.querySelector('.toast-close');
         closeBtn.addEventListener('click', () => {
-            toast.remove();
+            toast.classList.add('removing');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300);
         });
 
         // Auto remove after duration
         setTimeout(() => {
             if (toast.parentNode) {
-                toast.remove();
+                toast.classList.add('removing');
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 300);
             }
         }, duration);
-
-        // Animate in
-        setTimeout(() => {
-            toast.classList.add('toast-show');
-        }, 10);
     }
 }
 

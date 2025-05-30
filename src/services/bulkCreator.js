@@ -1,10 +1,11 @@
 const { v4: uuidv4 } = require('uuid');
 const WHMApi = require('./whmApi');
+const CloudflareApi = require('./cloudflareApi');
 const logger = require('../utils/logger');
-const { 
-  validateDomains, 
-  sanitizeUsername, 
-  generateSecurePassword 
+const {
+  validateDomains,
+  sanitizeUsername,
+  generateSecurePassword
 } = require('../utils/validator');
 
 class BulkCreator {
@@ -41,6 +42,24 @@ class BulkCreator {
       const connectionTest = await whmApi.testConnection();
       if (!connectionTest.success) {
         throw new Error(`WHM connection failed: ${connectionTest.error}`);
+      }
+
+      // Initialize Cloudflare API client if credentials provided
+      let cloudflareApi = null;
+      if (requestData.cloudflareCredentials) {
+        cloudflareApi = new CloudflareApi(requestData.cloudflareCredentials);
+        
+        // Test Cloudflare connection
+        const cfConnectionTest = await cloudflareApi.testConnection();
+        if (!cfConnectionTest.success) {
+          throw new Error(`Cloudflare connection failed: ${cfConnectionTest.error}`);
+        }
+        
+        logger.info('Cloudflare DNS integration enabled', {
+          email: requestData.cloudflareCredentials.email,
+          recordType: requestData.cloudflareCredentials.recordType,
+          recordValue: requestData.cloudflareCredentials.recordValue
+        });
       }
 
       // Prepare process data
@@ -91,7 +110,7 @@ class BulkCreator {
       }
 
       // Start processing in background
-      this.processDomainsInBatches(processId, whmApi)
+      this.processDomainsInBatches(processId, whmApi, cloudflareApi)
         .catch(error => {
           logger.error('Bulk creation process failed:', { processId, error: error.message });
           this.processStateManager.failProcess(processId, error);
@@ -120,7 +139,7 @@ class BulkCreator {
   /**
    * Process domains in batches with concurrency control
    */
-  async processDomainsInBatches(processId, whmApi) {
+  async processDomainsInBatches(processId, whmApi, cloudflareApi = null) {
     const processData = this.activeProcesses.get(processId);
     if (!processData) {
       throw new Error('Process data not found');
@@ -144,7 +163,7 @@ class BulkCreator {
         });
 
         // Process batch with concurrency control
-        await this.processBatch(processId, whmApi, batch, batchIndex + 1);
+        await this.processBatch(processId, whmApi, batch, batchIndex + 1, cloudflareApi);
 
         // Update progress
         this.updateProgress(processId);
@@ -174,9 +193,9 @@ class BulkCreator {
   /**
    * Process a single batch of domains
    */
-  async processBatch(processId, whmApi, batch, batchNumber) {
+  async processBatch(processId, whmApi, batch, batchNumber, cloudflareApi = null) {
     const promises = batch.map((domain, index) =>
-      () => this.processSingleDomain(processId, whmApi, domain, batchNumber, index + 1)
+      () => this.processSingleDomain(processId, whmApi, domain, batchNumber, index + 1, cloudflareApi)
     );
 
     // Process with concurrency limit
@@ -198,7 +217,7 @@ class BulkCreator {
   /**
    * Process a single domain
    */
-  async processSingleDomain(processId, whmApi, domain, batchNumber, domainIndex) {
+  async processSingleDomain(processId, whmApi, domain, batchNumber, domainIndex, cloudflareApi = null) {
     const processData = this.activeProcesses.get(processId);
     if (!processData) {
       throw new Error('Process data not found');
@@ -231,6 +250,38 @@ class BulkCreator {
         });
 
         return result;
+      }
+
+      // Add Cloudflare DNS record if Cloudflare credentials provided
+      if (cloudflareApi) {
+        try {
+          this.processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Creating DNS record for ${domain}`,
+            data: { domain, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
+          });
+
+          const dnsResult = await cloudflareApi.addOrUpdateDnsRecord(domain);
+          if (dnsResult.success) {
+            this.processStateManager.addLog(processId, {
+              level: 'info',
+              message: `DNS record created successfully for ${domain}`,
+              data: { domain, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
+            });
+          } else {
+            this.processStateManager.addLog(processId, {
+              level: 'warn',
+              message: `Failed to create DNS record for ${domain}: ${dnsResult.error}`,
+              data: { domain, error: dnsResult.error }
+            });
+          }
+        } catch (dnsError) {
+          this.processStateManager.addLog(processId, {
+            level: 'warn',
+            message: `DNS record creation error for ${domain}: ${dnsError.message}`,
+            data: { domain, error: dnsError.message }
+          });
+        }
       }
 
       // Generate account data

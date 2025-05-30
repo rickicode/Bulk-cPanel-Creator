@@ -4,135 +4,154 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cPanel Bulk Creator</title>
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'%3E%3Cpath d='M8 2l5.5 9H9l4 11-5.5-9H12L8 2z'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImxpZ2h0bmluZyIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmYmJmMjQ7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6I2Y1OWUwYjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxwYXRoIGQ9Ik0xMyAxMFYzTDQgMTRoN3Y3bDktMTFoLTd6IiBmaWxsPSJ1cmwoI2xpZ2h0bmluZykiIHN0cm9rZT0iI2Q5NzcwNiIgc3Ryb2tlLXdpZHRoPSIwLjUiLz4KPC9zdmc+">
     <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-
-    <!-- Particle Background -->
     <div id="particles-js"></div>
     
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay hidden">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
-            <div id="loadingText">Loading...</div>
-        </div>
-    </div>
-
-    <!-- Toast Container -->
-    <div id="toastContainer" class="toast-container"></div>
-
     <div class="container">
+        <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <div class="logo">
-                    <svg class="logo-icon" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 2l5.5 9H9l4 11-5.5-9H12L8 2z"/>
-                    </svg>
+                <div class="header-brand">
+                    <div class="logo">
+                        <svg class="logo-icon" viewBox="0 0 24 24" fill="none">
+                            <defs>
+                                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M13 10V3L4 14h7v7l9-11h-7z" fill="url(#logoGradient)" stroke="#d97706" stroke-width="0.5"/>
+                        </svg>
+                    </div>
+                    <div class="header-text">
+                        <h1 class="title">cPanel Bulk Creator</h1>
+                        <p class="subtitle">Bulk account creation with Cloudflare DNS integration</p>
+                    </div>
                 </div>
-                <div class="header-text">
-                    <h1 class="title">cPanel Bulk Creator</h1>
-                    <p class="subtitle">Bulk create cPanel accounts through WHM</p>
+                <div class="header-actions">
+                    <div class="status-indicator">
+                        <div class="status-dot"></div>
+                        <span class="status-text">Ready</span>
+                    </div>
                 </div>
             </div>
         </header>
 
+        <!-- Main Content -->
         <div class="main-content">
-            <!-- WHM Credentials Section -->
-            <section class="section">
-            <div class="section-header">
-                <h2 class="section-title">WHM Server Credentials</h2>
-                <p class="section-description">Configure your WHM server connection</p>
-            </div>
-            
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="whmHost" class="form-label">WHM Host/IP</label>
-                    <input type="text" id="whmHost" class="form-input" placeholder="server.example.com or 192.168.1.10" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="whmPort" class="form-label">Port</label>
-                    <input type="number" id="whmPort" class="form-input" value="2087" min="1" max="65535" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="whmUsername" class="form-label">Username</label>
-                    <input type="text" id="whmUsername" class="form-input" placeholder="root" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="whmSsl" class="form-label">Use SSL/HTTPS</label>
-                    <select id="whmSsl" class="form-select">
-                        <option value="true">Yes</option>
-                        <option value="false">No</option>
-                    </select>
-                </div>
-            </div>
+            <div class="form-container">
+                <!-- Server Configuration -->
+                <section class="config-section">
+                    <h2 class="section-title">Server Configuration</h2>
+                    
+                    <!-- WHM Credentials -->
+                    <div class="config-group">
+                        <h3 class="group-title">WHM Server</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="whmHost">Server Host</label>
+                                <input type="text" id="whmHost" placeholder="server.example.com" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="whmPort">Port</label>
+                                <input type="number" id="whmPort" value="2087" min="1" max="65535" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="whmUsername">Username</label>
+                                <input type="text" id="whmUsername" placeholder="root" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="whmSsl">SSL</label>
+                                <select id="whmSsl">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="authMethod">Authentication</label>
+                                <select id="authMethod">
+                                    <option value="token">API Token</option>
+                                    <option value="password">Password</option>
+                                </select>
+                            </div>
+                            <div class="form-field" id="apiTokenGroup">
+                                <label for="whmApiToken">API Token</label>
+                                <input type="password" id="whmApiToken" placeholder="Your WHM API token">
+                            </div>
+                            <div class="form-field hidden" id="passwordGroup">
+                                <label for="whmPassword">Password</label>
+                                <input type="password" id="whmPassword" placeholder="Your WHM password">
+                            </div>
+                            <div class="form-field">
+                                <label for="packagePlan">Package</label>
+                                <select id="packagePlan">
+                                    <option value="default">Default</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button id="testConnectionBtn" class="btn btn-primary" disabled>
+                                Test WHM Connection
+                            </button>
+                        </div>
+                    </div>
 
-            <!-- Authentication Section -->
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="authMethod" class="form-label">Authentication Method</label>
-                    <select id="authMethod" class="form-select">
-                        <option value="token">API Token (Recommended)</option>
-                        <option value="password">Password</option>
-                    </select>
-                </div>
+                    <!-- Cloudflare DNS -->
+                    <div class="config-group">
+                        <h3 class="group-title">Cloudflare DNS <span class="optional">(Optional)</span></h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="cfEmail">Email</label>
+                                <input type="email" id="cfEmail" placeholder="your-email@example.com">
+                            </div>
+                            <div class="form-field">
+                                <label for="cfApiKey">Global API Key</label>
+                                <input type="password" id="cfApiKey" placeholder="Your Cloudflare Global API Key">
+                            </div>
+                            <div class="form-field">
+                                <label for="cfRecordType">Record Type</label>
+                                <select id="cfRecordType">
+                                    <option value="A">A Record</option>
+                                    <option value="CNAME">CNAME Record</option>
+                                </select>
+                            </div>
+                            <div class="form-field" id="cfValueGroup">
+                                <label for="cfRecordValue">Record Value</label>
+                                <input type="text" id="cfRecordValue" placeholder="IP Address or Domain">
+                                <small class="help-text" id="cfValueHelp">Enter IP address for A record</small>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button id="testCfConnectionBtn" class="btn btn-secondary" disabled>
+                                Test Cloudflare Connection
+                            </button>
+                        </div>
+                    </div>
+                </section>
 
-                <!-- API Token Group -->
-                <div id="apiTokenGroup" class="form-group">
-                    <label for="whmApiToken" class="form-label">API Token</label>
-                    <input type="password" id="whmApiToken" class="form-input" placeholder="Your WHM API token">
-                    <small class="form-help">Generate API token in WHM > Development > Manage API Tokens</small>
-                </div>
-
-                <!-- Password Group -->
-                <div id="passwordGroup" class="form-group hidden">
-                    <label for="whmPassword" class="form-label">Password</label>
-                    <input type="password" id="whmPassword" class="form-input" placeholder="Your WHM password">
-                    <small class="form-help">Use API token instead of password for better security</small>
-                </div>
+                <!-- Domain List -->
+                <section class="domain-section">
+                    <h2 class="section-title">Domain List</h2>
+                    <div class="domain-input">
+                        <textarea id="domainList" class="domain-textarea" 
+                                  placeholder="example1.com&#10;example2.com&#10;example3.com&#10;Enter one domain per line..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button id="validateDomainsBtn" class="btn btn-secondary" disabled>
+                            Validate Domains
+                        </button>
+                        <button id="clearDomainsBtn" class="btn btn-outline">
+                            Clear List
+                        </button>
+                    </div>
+                </section>
             </div>
-
-            <!-- Package Plan -->
-            <div class="form-group">
-                <label for="packagePlan" class="form-label">Package Plan</label>
-                <select id="packagePlan" class="form-select">
-                    <option value="default">Default</option>
-                </select>
-            </div>
-
-            <div class="form-actions">
-                <button id="testConnectionBtn" class="btn btn-primary" disabled>
-                    Test Connection
-                </button>
-            </div>
-            </section>
-
-            <!-- Domain List Section -->
-            <section class="section">
-            <div class="section-header">
-                <h2 class="section-title">Domain List</h2>
-                <p class="section-description">Enter domains to create accounts for (one per line)</p>
-            </div>
-            
-            <div class="form-group">
-                <textarea id="domainList" class="form-textarea" rows="20" 
-                          placeholder="example1.com&#10;example2.com&#10;example3.com"></textarea>
-            </div>
-            
-            <div class="form-actions">
-                <button id="validateDomainsBtn" class="btn btn-secondary" disabled>
-                    Validate Domains
-                </button>
-                <button id="clearDomainsBtn" class="btn btn-outline">
-                    Clear List
-                </button>
-            </div>
-        </section>
         </div>
 
         <!-- Domain Validation Results Section -->
@@ -173,58 +192,56 @@
         </section>
 
         <!-- Bulk Creation Section -->
-        <section class="section full-width">
-            <div class="section-header">
-                <h2 class="section-title">Bulk Creation</h2>
-                <p class="section-description">Start the bulk account creation process</p>
-            </div>
-            
+        <section class="section full-width bulk-creation-section">
             <div class="form-actions">
-                <button id="startCreationBtn" class="btn btn-success" disabled>
+                <button id="startCreationBtn" class="btn btn-success btn-lg" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
                     Start Bulk Creation
                 </button>
-                <button id="stopCreationBtn" class="btn btn-danger" disabled>
-                    Stop Process
+                <button id="stopCreationBtn" class="btn btn-danger btn-lg" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>
+                    Stop Creation
                 </button>
             </div>
         </section>
 
-        <!-- Process Monitor Section -->
+        <!-- Progress Monitor Section -->
         <section id="monitorSection" class="section full-width hidden">
             <div class="section-header">
-                <h2 class="section-title">Process Monitor</h2>
-                <p class="section-description">Process monitoring via REST API polling</p>
+                <h2 class="section-title">Creation Progress</h2>
+                <p class="section-description">Monitor the bulk account creation process</p>
             </div>
-
             
-            <!-- Progress Bar -->
             <div class="progress-container">
-                <div class="progress-header">
+                <div class="progress-info">
                     <span id="progressText">Initializing...</span>
-                    <span id="progressPercentage">0%</span>
+                    <span id="progressPercentage" class="progress-percentage">0%</span>
                 </div>
                 <div class="progress-bar">
                     <div id="progressFill" class="progress-fill"></div>
                 </div>
             </div>
-            
-            <!-- Statistics -->
+
             <div class="stats-grid">
                 <div class="stat-card">
-                    <span class="stat-label">Processed</span>
-                    <span id="processedCount" class="stat-value">0</span>
+                    <div class="stat-value" id="processedCount">0</div>
+                    <div class="stat-label">Processed</div>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">Successful</span>
-                    <span id="successCount" class="stat-value text-green">0</span>
+                    <div class="stat-value text-green" id="successCount">0</div>
+                    <div class="stat-label">Successful</div>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">Failed</span>
-                    <span id="failedCount" class="stat-value text-red">0</span>
+                    <div class="stat-value text-red" id="failedCount">0</div>
+                    <div class="stat-label">Failed</div>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">Skipped</span>
-                    <span id="skippedCount" class="stat-value text-yellow">0</span>
+                    <div class="stat-value text-yellow" id="skippedCount">0</div>
+                    <div class="stat-label">Skipped</div>
                 </div>
             </div>
 
@@ -233,10 +250,10 @@
                 <div class="logs-header">
                     <h3>Process Logs</h3>
                     <div class="logs-controls">
-                        <div class="logs-control checkbox-group">
+                        <label class="checkbox-label">
                             <input type="checkbox" id="autoScrollLogs" checked>
-                            <label for="autoScrollLogs">Auto-scroll</label>
-                        </div>
+                            Auto-scroll
+                        </label>
                         <button id="clearLogsBtn" class="btn btn-outline btn-sm">Clear Logs</button>
                     </div>
                 </div>
@@ -248,25 +265,33 @@
         <section id="successfulAccountsSection" class="section full-width hidden">
             <div class="section-header">
                 <h2 class="section-title">Successful Accounts</h2>
-                <p class="section-description">Accounts created successfully</p>
+                <p class="section-description">Successfully created cPanel accounts</p>
             </div>
             
             <div class="form-actions">
-                <button id="exportAccountsBtn" class="btn btn-primary">Export Accounts (TXT)</button>
-                <button id="exportAccountsCsvBtn" class="btn btn-secondary">Export Accounts (CSV)</button>
+                <button id="exportAccountsBtn" class="btn btn-primary">
+                    Export as TXT
+                </button>
+                <button id="exportAccountsCsvBtn" class="btn btn-secondary">
+                    Export as CSV
+                </button>
             </div>
             
             <div id="successfulAccountsList" class="accounts-list"></div>
         </section>
-
-
-        <footer class="footer">
-            <p>&copy; 2025 cPanel Bulk Creator</p>
-            <p>Powered by HIJILABS Studios</p>
-        </footer>
     </div>
 
-    <!-- Include the JavaScript -->
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div id="loadingText" class="loading-text">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <script src="app.js"></script>
 </body>
 </html>

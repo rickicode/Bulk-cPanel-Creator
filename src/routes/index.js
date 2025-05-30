@@ -2,6 +2,7 @@ const express = require('express');
 const whmRoutes = require('./whm');
 const bulkRoutes = require('./bulk');
 const processRoutes = require('./process');
+const cloudflareRoutes = require('./cloudflare');
 
 const router = express.Router();
 
@@ -9,6 +10,7 @@ const router = express.Router();
 router.use('/whm', whmRoutes);
 router.use('/bulk', bulkRoutes);
 router.use('/process', processRoutes);
+router.use('/cloudflare', cloudflareRoutes);
 
 // API Info endpoint
 router.get('/', (req, res) => {
@@ -22,8 +24,12 @@ router.get('/', (req, res) => {
         'GET /api/whm/packages': 'Get available packages',
         'GET /api/whm/stats': 'Get server statistics'
       },
+      cloudflare: {
+        'POST /api/cloudflare/validate': 'Validate Cloudflare credentials',
+        'POST /api/cloudflare/zones': 'Get zones for a domain'
+      },
       bulk: {
-        'POST /api/bulk/create': 'Start bulk account creation',
+        'POST /api/bulk/create': 'Start bulk account creation (with optional Cloudflare DNS)',
         'GET /api/bulk/validate-domains': 'Validate domains list (GET)',
         'POST /api/bulk/validate-domains': 'Validate domains list (POST)'
       },

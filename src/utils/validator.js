@@ -31,6 +31,14 @@ const whmCredentialsSchema = Joi.object({
   return value;
 });
 
+// Cloudflare credentials validation schema
+const cloudflareCredentialsSchema = Joi.object({
+  email: Joi.string().email().required(),
+  apiKey: Joi.string().required(),
+  recordType: Joi.string().valid('A', 'CNAME').default('A'),
+  recordValue: Joi.string().required()
+});
+
 // Domain validation schema
 const domainSchema = Joi.string()
   .pattern(/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/)
@@ -39,6 +47,7 @@ const domainSchema = Joi.string()
 // Account generation request schema
 const accountGenerationSchema = Joi.object({
   whmCredentials: whmCredentialsSchema.required(),
+  cloudflareCredentials: cloudflareCredentialsSchema.optional(),
   domains: Joi.array().items(domainSchema).min(1).max(1000).required(),
   emailTemplate: Joi.string().email().optional(),
   plan: Joi.string().optional(),
@@ -156,6 +165,20 @@ function validateAccountGenerationRequest(requestData) {
 }
 
 /**
+ * Validate Cloudflare credentials
+ */
+function validateCloudflareCredentials(credentials) {
+  const { error, value } = cloudflareCredentialsSchema.validate(credentials);
+  
+  if (error) {
+    logger.warn('Cloudflare credentials validation failed:', error.details);
+    throw new Error(`Invalid Cloudflare credentials: ${error.message}`);
+  }
+  
+  return value;
+}
+
+/**
  * Sanitize username from domain with random suffix
  */
 function sanitizeUsername(domain) {
@@ -221,6 +244,7 @@ function generateSecurePassword(length = 12) {
 module.exports = {
   validateEnvVariables,
   validateWhmCredentials,
+  validateCloudflareCredentials,
   validateDomain,
   validateDomains,
   validateAccountGenerationRequest,
@@ -229,6 +253,7 @@ module.exports = {
   schemas: {
     envSchema,
     whmCredentialsSchema,
+    cloudflareCredentialsSchema,
     domainSchema,
     accountGenerationSchema
   }
