@@ -75,12 +75,12 @@ router.post('/validate', async (req, res) => {
 });
 
 /**
- * GET /api/whm/packages
+ * POST /api/whm/packages
  * Get available packages/plans from WHM
  */
-router.get('/packages', async (req, res) => {
+router.post('/packages', async (req, res) => {
   try {
-    const { whmCredentials } = req.query;
+    const { whmCredentials } = req.body;
 
     if (!whmCredentials) {
       return res.status(400).json({
@@ -90,21 +90,7 @@ router.get('/packages', async (req, res) => {
       });
     }
 
-    // Parse credentials if sent as JSON string
-    let credentials;
-    try {
-      credentials = typeof whmCredentials === 'string' 
-        ? JSON.parse(whmCredentials) 
-        : whmCredentials;
-    } catch (parseError) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid credentials format',
-        code: 'INVALID_CREDENTIALS_FORMAT'
-      });
-    }
-
-    const validatedCredentials = validateWhmCredentials(credentials);
+    const validatedCredentials = validateWhmCredentials(whmCredentials);
     const whmApi = new WHMApi(validatedCredentials);
     
     const result = await whmApi.getPackages();
@@ -117,7 +103,9 @@ router.get('/packages', async (req, res) => {
 
       res.json({
         success: true,
-        data: result.packages
+        data: {
+          packages: result.packages
+        }
       });
     } else {
       res.status(500).json({

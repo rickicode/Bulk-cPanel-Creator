@@ -1,7 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -11,20 +9,12 @@ const path = require('path');
 const logger = require('./src/utils/logger');
 const routes = require('./src/routes');
 const { validateEnvVariables } = require('./src/utils/validator');
-const SocketManager = require('./src/services/socketManager');
+const ProcessStateManager = require('./src/services/processStateManager');
 
 // Validate environment variables
 validateEnvVariables();
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: process.env.NODE_ENV === 'production' ? false : "*",
-    methods: ["GET", "POST"]
-  }
-});
-
 const PORT = process.env.PORT || 3000;
 
 // Security middleware
@@ -35,7 +25,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       scriptSrc: ["'self'", "https://cdnjs.cloudflare.com"],
-      connectSrc: ["'self'", "ws:", "wss:"],
+      connectSrc: ["'self'"],
     },
   },
 }));
@@ -66,12 +56,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Initialize Socket Manager
-const socketManager = new SocketManager(io);
+// Initialize Process State Manager
+const processStateManager = new ProcessStateManager();
 
-// Make socketManager available to routes
+// Make processStateManager available to routes
 app.use((req, res, next) => {
-  req.socketManager = socketManager;
+  req.processStateManager = processStateManager;
   next();
 });
 
@@ -85,12 +75,17 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  const stats = processStateManager.getStats();
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage(),
-    version: process.env.npm_package_version || '1.0.0'
+    version: process.env.npm_package_version || '2.0.0',
+    processes: {
+      active: stats.activeProcesses,
+      totalLogs: stats.totalLogs
+    }
   });
 });
 
@@ -120,11 +115,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  socketManager.handleConnection(socket);
-});
-
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received: closing HTTP server');
@@ -143,12 +133,13 @@ process.on('SIGINT', () => {
 });
 
 // Start server
-server.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`, {
+const server = app.listen(PORT, () => {
+  logger.info(`REST API Server running on port ${PORT}`, {
     environment: process.env.NODE_ENV,
     port: PORT,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    mode: 'REST_POLLING'
   });
 });
 
-module.exports = { app, server, io };
+module.exports = { app, server, processStateManager };

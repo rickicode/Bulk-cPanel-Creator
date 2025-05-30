@@ -1,17 +1,19 @@
 /**
- * cPanel Bulk Creator - Frontend Application
- * Minimalist design with particle effects
+ * cPanel Bulk Creator - Frontend Application (REST API Version)
+ * Uses REST API polling instead of websockets
  */
 
 class BulkCreatorApp {
     constructor() {
-        this.socket = null;
         this.currentProcessId = null;
         this.isProcessing = false;
         this.isWhmConnected = false;
         this.validationResults = null;
         this.processResults = null;
         this.successfulAccounts = [];
+        this.pollingInterval = null;
+        this.pollingFrequency = 2000; // 2 second
+        this.lastLogCount = 0;
         
         this.init();
     }
@@ -23,8 +25,8 @@ class BulkCreatorApp {
         this.initializeElements();
         this.initializeParticles();
         this.setupEventListeners();
-        this.connectWebSocket();
         this.loadFormDefaults();
+        // Always connected in REST mode - no need for connection status display
     }
 
     /**
@@ -77,10 +79,6 @@ class BulkCreatorApp {
             
             // Config
             packagePlan: document.getElementById('packagePlan'),
-            quota: document.getElementById('quota'),
-            bwlimit: document.getElementById('bwlimit'),
-            hasshell: document.getElementById('hasshell'),
-            cgi: document.getElementById('cgi'),
             
             // Domains
             domainList: document.getElementById('domainList'),
@@ -92,13 +90,10 @@ class BulkCreatorApp {
             startCreationBtn: document.getElementById('startCreationBtn'),
             stopCreationBtn: document.getElementById('stopCreationBtn'),
             clearLogsBtn: document.getElementById('clearLogsBtn'),
-            exportTextBtn: document.getElementById('exportTextBtn'),
-            copyResultsBtn: document.getElementById('copyResultsBtn'),
-            downloadCsvBtn: document.getElementById('downloadCsvBtn'),
+            exportAccountsBtn: document.getElementById('exportAccountsBtn'),
+            exportAccountsCsvBtn: document.getElementById('exportAccountsCsvBtn'),
             
             // Status displays
-            connectionStatus: document.getElementById('connectionStatus'),
-            statusText: document.getElementById('statusText'),
             progressText: document.getElementById('progressText'),
             progressPercentage: document.getElementById('progressPercentage'),
             progressFill: document.getElementById('progressFill'),
@@ -111,7 +106,6 @@ class BulkCreatorApp {
             monitorSection: document.getElementById('monitorSection'),
             successfulAccountsSection: document.getElementById('successfulAccountsSection'),
             successfulAccountsList: document.getElementById('successfulAccountsList'),
-            resultsSection: document.getElementById('resultsSection'),
             
             // Logs
             logsContent: document.getElementById('logsContent'),
@@ -128,10 +122,6 @@ class BulkCreatorApp {
             invalidDomainsUl: document.getElementById('invalidDomainsUl'),
             duplicateDomainsUl: document.getElementById('duplicateDomainsUl'),
             
-            // Results
-            resultsFilter: document.getElementById('resultsFilter'),
-            resultsTable: document.getElementById('resultsTable'),
-            resultsTableBody: document.getElementById('resultsTableBody'),
             
             // Loading
             loadingOverlay: document.getElementById('loadingOverlay'),
@@ -162,7 +152,7 @@ class BulkCreatorApp {
             });
         });
 
-        // SSL checkbox change
+        // SSL select change
         this.elements.whmSsl.addEventListener('change', () => {
             this.validateCredentialFields();
         });
@@ -196,22 +186,15 @@ class BulkCreatorApp {
             this.clearLogs();
         });
 
-        this.elements.exportTextBtn.addEventListener('click', () => {
-            this.exportAsText();
+
+        this.elements.exportAccountsBtn.addEventListener('click', () => {
+            this.exportAccountsToTxt();
         });
 
-        this.elements.copyResultsBtn.addEventListener('click', () => {
-            this.copyResultsToClipboard();
+        this.elements.exportAccountsCsvBtn.addEventListener('click', () => {
+            this.exportAccountsToCsv();
         });
 
-        this.elements.downloadCsvBtn.addEventListener('click', () => {
-            this.downloadCsv();
-        });
-
-        // Results filter
-        this.elements.resultsFilter.addEventListener('change', () => {
-            this.filterResults();
-        });
 
         // Auto-scroll logs
         this.elements.autoScrollLogs.addEventListener('change', () => {
@@ -276,61 +259,112 @@ class BulkCreatorApp {
     }
 
     /**
-     * Connect to WebSocket server
+     * Update connection status display (placeholder for REST mode)
      */
-    connectWebSocket() {
-        this.updateConnectionStatus('connecting');
-        
-        try {
-            this.socket = io();
+    updateConnectionStatus(status) {
+        // No UI elements for connection status in REST mode
+        console.log('Connection status:', status);
+    }
 
-            this.socket.on('connect', () => {
-                this.updateConnectionStatus('connected');
-                this.addLog('info', 'Connected to server');
-            });
+    /**
+     * Start polling for process updates
+     */
+    startPolling() {
+        if (!this.currentProcessId || this.pollingInterval) {
+            return;
+        }
 
-            this.socket.on('disconnect', () => {
-                this.updateConnectionStatus('disconnected');
-                this.addLog('warn', 'Disconnected from server');
-            });
+        this.addLog('info', `Starting polling every ${this.pollingFrequency}ms for process updates`);
 
-            this.socket.on('connected', (data) => {
-                this.addLog('info', data.message);
-            });
+        this.pollingInterval = setInterval(async () => {
+            try {
+                await this.pollProcessStatus();
+                await this.pollProcessLogs();
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        }, this.pollingFrequency);
+    }
 
-            this.socket.on('process-started', (data) => {
-                this.handleProcessStarted(data);
-            });
-
-            this.socket.on('progress', (data) => {
-                this.handleProgress(data);
-            });
-
-            this.socket.on('log', (data) => {
-                this.handleLog(data);
-            });
-
-            this.socket.on('process-completed', (data) => {
-                this.handleProcessCompleted(data);
-            });
-
-            this.socket.on('process-failed', (data) => {
-                this.handleProcessFailed(data);
-            });
-
-        } catch (error) {
-            console.error('WebSocket connection error:', error);
-            this.updateConnectionStatus('disconnected');
-            this.showToast('error', 'Failed to connect to server');
+    /**
+     * Stop polling
+     */
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+            this.addLog('info', 'Stopped polling for process updates');
         }
     }
 
     /**
-     * Update connection status display
+     * Poll process status
      */
-    updateConnectionStatus(status) {
-        this.elements.statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
-        this.elements.connectionStatus.className = `connection-status ${status}`;
+    async pollProcessStatus() {
+        if (!this.currentProcessId) return;
+
+        try {
+            const response = await fetch(`/api/process/${this.currentProcessId}/status`);
+            const result = await response.json();
+
+            if (result.success && result.data) {
+                this.handleProcessStatus(result.data);
+            } else if (response.status === 404) {
+                // Process not found, stop polling
+                this.stopPolling();
+                this.addLog('warn', 'Process not found, stopped polling');
+            }
+        } catch (error) {
+            console.error('Failed to poll process status:', error);
+        }
+    }
+
+    /**
+     * Poll process logs
+     */
+    async pollProcessLogs() {
+        if (!this.currentProcessId) return;
+
+        try {
+            const response = await fetch(`/api/process/${this.currentProcessId}/logs?limit=50`);
+            const result = await response.json();
+
+            if (result.success && result.data.logs) {
+                this.handleNewLogs(result.data.logs);
+            }
+        } catch (error) {
+            console.error('Failed to poll process logs:', error);
+        }
+    }
+
+    /**
+     * Handle process status updates
+     */
+    handleProcessStatus(status) {
+        // Update progress
+        if (status.progress) {
+            this.handleProgress(status.progress);
+        }
+
+        // Handle completion or failure
+        if (status.status === 'completed') {
+            this.handleProcessCompleted(status);
+        } else if (status.status === 'failed') {
+            this.handleProcessFailed(status);
+        }
+    }
+
+    /**
+     * Handle new logs from polling
+     */
+    handleNewLogs(logs) {
+        // Only add new logs we haven't seen before
+        const newLogs = logs.slice(this.lastLogCount);
+        this.lastLogCount = logs.length;
+
+        newLogs.forEach(log => {
+            this.handleLog(log);
+        });
     }
 
     /**
@@ -366,7 +400,7 @@ class BulkCreatorApp {
                     this.elements.whmHost.value = savedWhmData.host || '';
                     this.elements.whmPort.value = savedWhmData.port || '2087';
                     this.elements.whmUsername.value = savedWhmData.username || '';
-                    this.elements.whmSsl.checked = savedWhmData.ssl !== false;
+                    this.elements.whmSsl.value = savedWhmData.ssl !== false ? 'true' : 'false';
                     this.elements.authMethod.value = savedWhmData.authMethod || 'token';
                     
                     // Load sensitive data
@@ -398,7 +432,7 @@ class BulkCreatorApp {
         const formData = {};
         
         const fieldsToSave = [
-            'quota', 'bwlimit', 'hasshell', 'cgi'
+            // No fields to save anymore - using defaults
         ];
 
         fieldsToSave.forEach(field => {
@@ -422,7 +456,7 @@ class BulkCreatorApp {
             host: this.elements.whmHost.value.trim(),
             port: this.elements.whmPort.value,
             username: this.elements.whmUsername.value.trim(),
-            ssl: this.elements.whmSsl.checked,
+            ssl: this.elements.whmSsl.value === 'true',
             authMethod: this.elements.authMethod.value
         };
 
@@ -446,7 +480,7 @@ class BulkCreatorApp {
             host: this.elements.whmHost.value.trim(),
             port: parseInt(this.elements.whmPort.value) || 2087,
             username: this.elements.whmUsername.value.trim(),
-            ssl: this.elements.whmSsl.checked,
+            ssl: this.elements.whmSsl.value === 'true',
             ...(this.elements.authMethod.value === 'token' 
                 ? { apiToken: this.elements.whmApiToken.value.trim() }
                 : { password: this.elements.whmPassword.value.trim() }
@@ -507,67 +541,76 @@ class BulkCreatorApp {
      */
     async loadPackages() {
         try {
+            console.log('Loading packages from WHM...');
             const credentials = this.getWhmCredentials();
-            const params = new URLSearchParams({
-                whmCredentials: JSON.stringify(credentials)
+            
+            const response = await fetch('/api/whm/packages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ whmCredentials: credentials })
             });
 
-            const response = await fetch(`/api/whm/packages?${params}`);
             const result = await response.json();
-
-            if (result.success) {
-                this.populatePackageSelect(result.data);
-                this.addLog('info', `Loaded ${result.data.length} packages`);
+            console.log('Packages response:', result);
+            
+            if (result.success && result.data && result.data.packages) {
+                console.log('Found packages:', result.data.packages);
+                this.populatePackageSelect(result.data.packages);
+            } else {
+                console.error('No packages found or error:', result);
+                this.addLog('warn', 'No packages found from WHM server');
             }
-
         } catch (error) {
-            console.error('Package loading error:', error);
+            console.error('Failed to load packages:', error);
+            this.addLog('error', `Failed to load packages: ${error.message}`);
         }
     }
 
     /**
-     * Populate package select dropdown
+     * Populate package select with available plans
      */
     populatePackageSelect(packages) {
-        const select = this.elements.packagePlan;
+        if (!this.elements.packagePlan) return;
         
-        while (select.children.length > 1) {
-            select.removeChild(select.lastChild);
-        }
+        // Clear existing options except default
+        Array.from(this.elements.packagePlan.options).forEach(option => {
+            if (option.value !== 'default') {
+                option.remove();
+            }
+        });
 
+        // Add packages
         packages.forEach((pkg, index) => {
             const option = document.createElement('option');
             option.value = pkg.name;
-            option.textContent = `${pkg.name} (${pkg.quota} disk, ${pkg.bwlimit} bandwidth)`;
-            select.appendChild(option);
+            option.textContent = pkg.name;
+            this.elements.packagePlan.appendChild(option);
         });
-
-        // Automatically select the first package if available
+        
+        // Auto-select first package if available
         if (packages.length > 0) {
-            select.selectedIndex = 1; // Index 1 because index 0 is "Default Package"
+            this.elements.packagePlan.value = packages[0].name;
             this.addLog('info', `Auto-selected package: ${packages[0].name}`);
         }
     }
 
     /**
-     * Validate domains
+     * Validate domains list
      */
     async validateDomains() {
-        const domainText = this.elements.domainList.value.trim();
-        if (!domainText) {
-            this.showToast('warning', 'Please enter domains to validate');
-            return;
-        }
-
         this.showLoading('Validating domains...');
-
+        
         try {
+            const domains = this.elements.domainList.value.trim();
+            
             const response = await fetch('/api/bulk/validate-domains', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ domains: domainText })
+                body: JSON.stringify({ domains })
             });
 
             const result = await response.json();
@@ -576,12 +619,7 @@ class BulkCreatorApp {
                 this.validationResults = result.data;
                 this.displayValidationResults(result.data);
                 this.updateStartButtonState();
-                
-                this.showToast('info', 
-                    `Validation complete: ${result.data.summary.validCount} valid, ` +
-                    `${result.data.summary.invalidCount} invalid, ` +
-                    `${result.data.summary.duplicateCount} duplicates`
-                );
+                this.showToast('success', `Validation complete: ${result.data.summary.validCount} valid domains`);
             } else {
                 this.showToast('error', `Validation failed: ${result.error}`);
             }
@@ -598,68 +636,69 @@ class BulkCreatorApp {
      * Display validation results
      */
     displayValidationResults(data) {
+        // Show validation section
+        this.elements.domainValidation.classList.remove('hidden');
+        
+        // Update counts
         this.elements.totalDomains.textContent = data.total;
         this.elements.validDomains.textContent = data.summary.validCount;
         this.elements.invalidDomains.textContent = data.summary.invalidCount;
         this.elements.duplicateDomains.textContent = data.summary.duplicateCount;
-
+        
+        // Show/hide invalid domains list
         if (data.invalid.length > 0) {
+            this.elements.invalidList.classList.remove('hidden');
             this.elements.invalidDomainsUl.innerHTML = '';
-            data.invalid.forEach(item => {
+            data.invalid.forEach(domain => {
                 const li = document.createElement('li');
-                li.textContent = `${item.domain} - ${item.error}`;
+                li.textContent = domain;
                 this.elements.invalidDomainsUl.appendChild(li);
             });
-            this.elements.invalidList.classList.remove('hidden');
         } else {
             this.elements.invalidList.classList.add('hidden');
         }
-
+        
+        // Show/hide duplicate domains list
         if (data.duplicates.length > 0) {
+            this.elements.duplicateList.classList.remove('hidden');
             this.elements.duplicateDomainsUl.innerHTML = '';
-            data.duplicates.forEach(item => {
+            data.duplicates.forEach(domain => {
                 const li = document.createElement('li');
-                li.textContent = item.domain;
+                li.textContent = domain;
                 this.elements.duplicateDomainsUl.appendChild(li);
             });
-            this.elements.duplicateList.classList.remove('hidden');
         } else {
             this.elements.duplicateList.classList.add('hidden');
         }
-
-        this.elements.domainValidation.classList.remove('hidden');
     }
 
     /**
-     * Clear domains
+     * Clear domains input and validation
      */
     clearDomains() {
         this.elements.domainList.value = '';
         this.elements.domainValidation.classList.add('hidden');
         this.validationResults = null;
-        this.validateDomainFields();
+        this.updateStartButtonState();
+        this.showToast('info', 'Domains cleared');
     }
 
     /**
-     * Start bulk creation process
+     * Start bulk account creation
      */
     async startBulkCreation() {
         if (!this.validationResults || this.validationResults.valid.length === 0) {
-            this.showToast('warning', 'Please validate domains first');
+            this.showToast('error', 'Please validate domains first');
             return;
         }
 
         this.showLoading('Starting bulk creation...');
-
+        
         try {
             const requestData = {
                 whmCredentials: this.getWhmCredentials(),
                 domains: this.validationResults.valid,
-                plan: this.elements.packagePlan.value || undefined,
-                quota: this.elements.quota.value.trim() || undefined,
-                bwlimit: this.elements.bwlimit.value.trim() || undefined,
-                hasshell: this.elements.hasshell.checked,
-                cgi: this.elements.cgi.checked
+                plan: this.elements.packagePlan.value
             };
 
             const response = await fetch('/api/bulk/create', {
@@ -675,43 +714,48 @@ class BulkCreatorApp {
             if (result.success) {
                 this.currentProcessId = result.processId;
                 this.isProcessing = true;
+                this.lastLogCount = 0;
                 
-                this.socket.emit('subscribe-process', this.currentProcessId);
-                
-                this.updateStartButtonState();
-                this.elements.stopCreationBtn.classList.remove('hidden');
-                this.elements.startCreationBtn.classList.add('hidden');
+                // Show monitoring section
                 this.elements.monitorSection.classList.remove('hidden');
-                this.elements.successfulAccountsSection.classList.remove('hidden');
+                this.elements.startCreationBtn.disabled = true;
+                this.elements.stopCreationBtn.disabled = false;
                 
-                // Clear previous successful accounts
-                this.clearSuccessfulAccountsList();
+                // Start polling for updates
+                this.startPolling();
                 
-                this.showToast('success', 'Bulk creation started...');
-                this.addLog('info', `Started bulk creation process: ${this.currentProcessId}`);
+                this.showToast('success', `Bulk creation started! Process ID: ${result.processId}`);
+                this.addLog('info', `Bulk creation started - Process ID: ${result.processId}`);
+                this.addLog('info', `Total domains to process: ${result.totalDomains}`);
                 
-                this.elements.monitorSection.scrollIntoView({ behavior: 'smooth' });
-                
+                if (result.invalidDomains > 0) {
+                    this.addLog('warn', `${result.invalidDomains} invalid domains will be skipped`);
+                }
+                if (result.duplicateDomains > 0) {
+                    this.addLog('warn', `${result.duplicateDomains} duplicate domains will be skipped`);
+                }
             } else {
-                this.showToast('error', `Failed to start: ${result.error}`);
+                this.showToast('error', `Failed to start creation: ${result.error}`);
+                this.addLog('error', `Bulk creation failed: ${result.error}`);
             }
 
         } catch (error) {
-            console.error('Bulk creation start error:', error);
+            console.error('Bulk creation error:', error);
             this.showToast('error', 'Failed to start bulk creation');
+            this.addLog('error', `Bulk creation error: ${error.message}`);
         } finally {
             this.hideLoading();
         }
     }
 
     /**
-     * Stop bulk creation process
+     * Stop bulk creation
      */
     async stopBulkCreation() {
-        if (!this.currentProcessId) {
-            return;
-        }
+        if (!this.currentProcessId) return;
 
+        this.showLoading('Stopping process...');
+        
         try {
             const response = await fetch(`/api/process/${this.currentProcessId}`, {
                 method: 'DELETE'
@@ -720,6 +764,11 @@ class BulkCreatorApp {
             const result = await response.json();
 
             if (result.success) {
+                this.stopPolling();
+                this.isProcessing = false;
+                this.elements.startCreationBtn.disabled = false;
+                this.elements.stopCreationBtn.disabled = true;
+                
                 this.showToast('info', 'Process stopped');
                 this.addLog('warn', 'Process stopped by user');
             } else {
@@ -727,8 +776,10 @@ class BulkCreatorApp {
             }
 
         } catch (error) {
-            console.error('Process stop error:', error);
+            console.error('Stop process error:', error);
             this.showToast('error', 'Failed to stop process');
+        } finally {
+            this.hideLoading();
         }
     }
 
@@ -736,16 +787,16 @@ class BulkCreatorApp {
      * Handle process started event
      */
     handleProcessStarted(data) {
-        this.addLog('info', `Process started: ${data.processId}`);
-        this.updateProgress(0, data.totalDomains, 'Starting...');
+        this.addLog('info', 'Process started successfully');
     }
 
     /**
-     * Handle progress event
+     * Handle progress update
      */
     handleProgress(data) {
-        this.updateProgress(data.current, data.total, data.currentItem || 'Processing...');
+        this.updateProgress(data.current, data.total, data.status);
         
+        // Update counts
         this.elements.processedCount.textContent = data.current || 0;
         this.elements.successCount.textContent = data.successful || 0;
         this.elements.failedCount.textContent = data.failed || 0;
@@ -753,19 +804,28 @@ class BulkCreatorApp {
     }
 
     /**
-     * Handle log event
+     * Handle log message
      */
     handleLog(data) {
-        this.addLog(data.level, data.message, data.data);
+        // Format message without showing raw JSON data
+        let message = data.message;
         
-        // Check if this is a successful account creation log
-        if (data.level === 'info' &&
-            data.message &&
-            data.message.includes('Account created successfully for') &&
-            data.data && data.data.domain && data.data.username) {
-            
-            // Extract account information from the process data
-            this.addSuccessfulAccountFromLog(data.data);
+        // If there's account data, format it nicely
+        if (data.data) {
+            if (data.data.domain && data.data.username) {
+                message += ` (Domain: ${data.data.domain}, Username: ${data.data.username})`;
+            } else if (data.data.domain) {
+                message += ` (Domain: ${data.data.domain})`;
+            } else if (data.data.totalDomains !== undefined) {
+                message += ` (Total: ${data.data.totalDomains}, Invalid: ${data.data.invalidDomains || 0}, Duplicates: ${data.data.duplicateDomains || 0})`;
+            }
+        }
+        
+        this.addLog(data.level, message);
+        
+        // Check for successful account creation
+        if (data.level === 'info' && data.message && data.message.includes('Account created successfully')) {
+            this.addSuccessfulAccountFromLog(data);
         }
     }
 
@@ -773,67 +833,109 @@ class BulkCreatorApp {
      * Add successful account from log data
      */
     addSuccessfulAccountFromLog(logData) {
-        // We need to get the full account data from the process results
-        // For now, we'll show partial data and update when full results are available
-        if (this.currentProcessId) {
-            this.loadPartialAccountData(logData.domain, logData.username);
+        if (logData.data && logData.data.domain && logData.data.username) {
+            // Create account data directly from log data
+            const accountData = {
+                domain: logData.data.domain,
+                username: logData.data.username,
+                email: logData.data.email || `admin@${logData.data.domain}`,
+                password: logData.data.password || 'Password Generated',
+                timestamp: new Date().toISOString()
+            };
+            
+            this.addSuccessfulAccount(accountData);
         }
     }
 
     /**
-     * Load partial account data for real-time display
+     * Load partial account data for successful accounts
      */
     async loadPartialAccountData(domain, username) {
         try {
-            const response = await fetch(`/api/process/${this.currentProcessId}`);
-            const result = await response.json();
-
-            if (result.success && result.data.results) {
-                const successfulAccount = result.data.results.successful.find(
-                    account => account.domain === domain && account.username === username
-                );
-
-                if (successfulAccount) {
-                    this.addSuccessfulAccount(successfulAccount);
+            if (this.currentProcessId) {
+                // Fetch account details from the API
+                const response = await fetch(`/api/process/${this.currentProcessId}/accounts`);
+                const result = await response.json();
+                
+                if (result.success && result.data && result.data.successful) {
+                    // Find the account with matching domain and username
+                    const account = result.data.successful.find(acc =>
+                        acc.domain === domain && acc.username === username
+                    );
+                    
+                    if (account && account.password) {
+                        const accountData = {
+                            domain,
+                            username,
+                            email: account.email || `admin@${domain}`,
+                            password: account.password,
+                            timestamp: new Date().toISOString()
+                        };
+                        
+                        this.addSuccessfulAccount(accountData);
+                        return;
+                    }
                 }
             }
+            
+            // Fallback if API call fails
+            const accountData = {
+                domain,
+                username,
+                email: `admin@${domain}`,
+                password: 'Not Available',
+                timestamp: new Date().toISOString()
+            };
+            
+            this.addSuccessfulAccount(accountData);
         } catch (error) {
-            console.warn('Failed to load account data:', error);
+            console.error('Failed to load account data:', error);
+            
+            // Fallback account data
+            const accountData = {
+                domain,
+                username,
+                email: `admin@${domain}`,
+                password: 'Not Available',
+                timestamp: new Date().toISOString()
+            };
+            
+            this.addSuccessfulAccount(accountData);
         }
     }
 
     /**
-     * Handle process completed event
+     * Handle process completion
      */
     handleProcessCompleted(data) {
+        this.stopPolling();
         this.isProcessing = false;
-        this.elements.stopCreationBtn.classList.add('hidden');
-        this.elements.startCreationBtn.classList.remove('hidden');
-        this.elements.exportTextBtn.disabled = false;
-        this.updateStartButtonState();
+        this.elements.startCreationBtn.disabled = false;
+        this.elements.stopCreationBtn.disabled = true;
         
-        this.addLog('info', `Process completed in ${Math.round(data.duration / 1000)}s`);
-        this.addLog('info', `Results: ${data.successful || 0} successful, ${data.failed || 0} failed, ${data.skipped || 0} skipped`);
+        this.addLog('info', 'Bulk creation process completed successfully!');
+        this.addLog('info', `Total processed: ${data.results?.totalProcessed || 0}`);
+        this.addLog('info', `Successful: ${data.results?.successful || 0}`);
+        this.addLog('info', `Failed: ${data.results?.failed || 0}`);
+        this.addLog('info', `Skipped: ${data.results?.skipped || 0}`);
         
-        this.updateProgress(data.total, data.total, 'Completed!');
-        this.showToast('success', 'Bulk creation completed successfully');
+        this.showToast('success', 'Bulk creation completed!');
         
+        // Load final results
         this.loadProcessResults();
     }
 
     /**
-     * Handle process failed event
+     * Handle process failure
      */
     handleProcessFailed(data) {
+        this.stopPolling();
         this.isProcessing = false;
-        this.elements.stopCreationBtn.classList.add('hidden');
-        this.elements.startCreationBtn.classList.remove('hidden');
-        this.updateStartButtonState();
+        this.elements.startCreationBtn.disabled = false;
+        this.elements.stopCreationBtn.disabled = true;
         
-        this.addLog('error', `Process failed: ${data.error.message}`);
-        this.showToast('error', `Process failed: ${data.error.message}`);
-        
-        this.updateProgress(0, 100, 'Failed');
+        this.addLog('error', `Process failed: ${data.error?.message || 'Unknown error'}`);
+        this.showToast('error', `Process failed: ${data.error?.message || 'Unknown error'}`);
     }
 
     /**
@@ -842,24 +944,31 @@ class BulkCreatorApp {
     updateProgress(current, total, text) {
         const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
         
-        this.elements.progressText.textContent = text;
         this.elements.progressPercentage.textContent = `${percentage}%`;
         this.elements.progressFill.style.width = `${percentage}%`;
+        this.elements.progressText.textContent = text || `${current}/${total}`;
     }
 
     /**
-     * Add log entry
+     * Add log entry to the UI
      */
     addLog(level, message, data = null) {
-        const time = new Date().toLocaleTimeString();
+        const timestamp = new Date().toLocaleTimeString();
         const logEntry = document.createElement('div');
-        logEntry.className = 'log-entry';
+        logEntry.className = `log-entry log-${level}`;
         
-        logEntry.innerHTML = `
-            <span class="log-time">[${time}]</span>
-            <span class="log-level ${level.toUpperCase()}">${level.toUpperCase()}</span>
-            <span class="log-message">${message}</span>
-        `;
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'log-time';
+        timeSpan.textContent = timestamp;
+        
+        const messageSpan = document.createElement('span');
+        messageSpan.className = 'log-message';
+        messageSpan.textContent = message;
+        
+        logEntry.appendChild(timeSpan);
+        logEntry.appendChild(messageSpan);
+        
+        // Remove JSON data display - data is now formatted in the message itself
         
         this.elements.logsContent.appendChild(logEntry);
         
@@ -880,244 +989,171 @@ class BulkCreatorApp {
      */
     clearLogs() {
         this.elements.logsContent.innerHTML = '';
-        this.addLog('info', 'Logs cleared');
+        this.showToast('info', 'Logs cleared');
     }
 
     /**
-     * Load process results
+     * Load process results for display
      */
     async loadProcessResults() {
-        if (!this.currentProcessId) {
-            return;
-        }
+        if (!this.currentProcessId) return;
 
         try {
-            const response = await fetch(`/api/process/${this.currentProcessId}`);
+            const response = await fetch(`/api/process/${this.currentProcessId}/status`);
             const result = await response.json();
 
             if (result.success && result.data.results) {
                 this.processResults = result.data.results;
-                this.displayResults(this.processResults);
-                this.elements.resultsSection.classList.remove('hidden');
-                
-                setTimeout(() => {
-                    this.elements.resultsSection.scrollIntoView({ behavior: 'smooth' });
-                }, 500);
+                // Results are now displayed in Successful Accounts section only
             }
-
         } catch (error) {
-            console.error('Failed to load results:', error);
+            console.error('Failed to load process results:', error);
         }
-    }
-
-    /**
-     * Display results in table
-     */
-    displayResults(results) {
-        const tbody = this.elements.resultsTableBody;
-        tbody.innerHTML = '';
-
-        const allResults = [
-            ...results.successful.map(r => ({ ...r, resultType: 'successful' })),
-            ...results.failed.map(r => ({ ...r, resultType: 'failed' })),
-            ...results.skipped.map(r => ({ ...r, resultType: 'skipped' }))
-        ];
-
-        allResults.forEach(result => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${result.domain || ''}</td>
-                <td>${result.username || ''}</td>
-                <td>${result.success && result.password ? result.password : ''}</td>
-                <td>${result.email || ''}</td>
-                <td><span class="status-badge ${result.resultType}">${result.success ? 'Success' : (result.resultType === 'skipped' ? 'Skipped' : 'Failed')}</span></td>
-                <td>${result.success ? (result.message || 'Created successfully') : (result.error || 'Unknown error')}</td>
-            `;
-            tbody.appendChild(row);
-        });
-    }
-
-    /**
-     * Filter results based on selected filter
-     */
-    filterResults() {
-        if (!this.processResults) {
-            return;
-        }
-
-        const filter = this.elements.resultsFilter.value;
-        const tbody = this.elements.resultsTableBody;
-        const rows = tbody.querySelectorAll('tr');
-
-        rows.forEach(row => {
-            const statusBadge = row.querySelector('.status-badge');
-            if (!statusBadge) return;
-
-            const status = statusBadge.className.split(' ')[1];
-            
-            if (filter === 'all') {
-                row.style.display = '';
-            } else if (filter === 'successful' && status === 'successful') {
-                row.style.display = '';
-            } else if (filter === 'failed' && status === 'failed') {
-                row.style.display = '';
-            } else if (filter === 'skipped' && status === 'skipped') {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
     }
 
     /**
      * Clear successful accounts list
      */
     clearSuccessfulAccountsList() {
-        this.elements.successfulAccountsList.innerHTML = `
-            <div class="empty-state">
-                <p>No accounts created yet. Start the bulk creation process to see results here.</p>
-            </div>
-        `;
-        this.elements.exportTextBtn.disabled = true;
+        this.elements.successfulAccountsList.innerHTML = '';
         this.successfulAccounts = [];
     }
 
     /**
-     * Add successful account to the display
+     * Add successful account to the list
      */
     addSuccessfulAccount(accountData) {
-        if (!this.successfulAccounts) {
-            this.successfulAccounts = [];
-        }
-
         this.successfulAccounts.push(accountData);
 
-        // Remove empty state if it exists
-        const emptyState = this.elements.successfulAccountsList.querySelector('.empty-state');
-        if (emptyState) {
-            emptyState.remove();
-        }
-
-        // Create account item
-        const accountItem = document.createElement('div');
-        accountItem.className = 'account-item';
-        
-        // Generate login URL
-        const loginUrl = `https://${accountData.domain}:2083`;
-        
-        accountItem.innerHTML = `
+        const accountDiv = document.createElement('div');
+        accountDiv.className = 'account-item';
+        accountDiv.innerHTML = `
             <div class="account-header">
-                <div class="account-domain">${accountData.domain}</div>
-                <div class="account-status">Created</div>
+                <h4 class="account-domain">${accountData.domain}</h4>
+                <span class="account-status">✓ Created Successfully</span>
             </div>
             <div class="account-details">
-                <div class="account-detail">
-                    <div class="account-detail-label">Username</div>
-                    <div class="account-detail-value selectable" onclick="navigator.clipboard.writeText('${accountData.username}')">${accountData.username}</div>
-                </div>
-                <div class="account-detail">
-                    <div class="account-detail-label">Password</div>
-                    <div class="account-detail-value selectable" onclick="navigator.clipboard.writeText('${accountData.password}')">${accountData.password}</div>
-                </div>
-                <div class="account-detail">
-                    <div class="account-detail-label">Login URL</div>
-                    <div class="account-detail-value selectable" onclick="window.open('${loginUrl}', '_blank')">${loginUrl}</div>
+                <div class="account-info">
+                    <div class="info-row">
+                        <strong>Username:</strong>
+                        <span class="selectable">${accountData.username}</span>
+                        <button class="copy-btn" data-copy="${accountData.username}">📋</button>
+                    </div>
+                    <div class="info-row">
+                        <strong>Password:</strong>
+                        <span class="selectable password-field">${accountData.password}</span>
+                        <button class="copy-btn" data-copy="${accountData.password}">📋</button>
+                    </div>
+                    <div class="info-row">
+                        <strong>Email:</strong>
+                        <span class="selectable">${accountData.email}</span>
+                        <button class="copy-btn" data-copy="${accountData.email}">📋</button>
+                    </div>
+                    <div class="info-row">
+                        <strong>cPanel Login:</strong>
+                        <a href="https://${accountData.domain}:2083" target="_blank" class="login-link">
+                            https://${accountData.domain}:2083
+                        </a>
+                        <button class="copy-btn" data-copy="https://${accountData.domain}:2083">📋</button>
+                    </div>
                 </div>
             </div>
         `;
 
-        this.elements.successfulAccountsList.appendChild(accountItem);
-        this.elements.exportTextBtn.disabled = false;
-
-        // Scroll to bottom of accounts list
-        this.elements.successfulAccountsList.scrollTop = this.elements.successfulAccountsList.scrollHeight;
-    }
-
-    /**
-     * Export successful accounts as text
-     */
-    exportAsText() {
-        if (!this.successfulAccounts || this.successfulAccounts.length === 0) {
-            this.showToast('warning', 'No successful accounts to export');
-            return;
-        }
-
-        let textContent = 'cPanel Account Creation Results\n';
-        textContent += '='.repeat(40) + '\n\n';
-
-        this.successfulAccounts.forEach((account, index) => {
-            const loginUrl = `https://${account.domain}:2083`;
-            
-            textContent += `Account ${index + 1}:\n`;
-            textContent += `Domain: ${account.domain}\n`;
-            textContent += `Username: ${account.username}\n`;
-            textContent += `Password: ${account.password}\n`;
-            textContent += `Login: ${loginUrl}\n`;
-            textContent += '\n' + '-'.repeat(30) + '\n\n';
+        // Add event listeners to copy buttons
+        const copyButtons = accountDiv.querySelectorAll('.copy-btn');
+        copyButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const textToCopy = e.target.getAttribute('data-copy');
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    // Visual feedback
+                    const originalText = e.target.textContent;
+                    e.target.textContent = '✓';
+                    setTimeout(() => {
+                        e.target.textContent = originalText;
+                    }, 1000);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            });
         });
 
-        // Create and download text file
-        const blob = new Blob([textContent], { type: 'text/plain' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `cpanel_accounts_${new Date().toISOString().split('T')[0]}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
+        this.elements.successfulAccountsList.appendChild(accountDiv);
+        this.elements.successfulAccountsSection.classList.remove('hidden');
 
-        this.showToast('success', 'Accounts exported as text file');
+        // Auto scroll to show new account
+        accountDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     /**
-     * Copy results to clipboard
+     * Export successful accounts to TXT format
      */
-    async copyResultsToClipboard() {
-        if (!this.processResults) {
-            this.showToast('warning', 'No results to copy');
+    exportAccountsToTxt() {
+        if (!this.successfulAccounts || this.successfulAccounts.length === 0) {
+            this.showToast('error', 'No successful accounts to export');
             return;
         }
 
-        try {
-            const successful = this.processResults.successful;
-            let text = 'cPanel Account Creation Results\n';
-            text += '================================\n\n';
-            
-            successful.forEach(result => {
-                text += `Domain: ${result.domain}\n`;
-                text += `Username: ${result.username}\n`;
-                text += `Password: ${result.password}\n`;
-                text += `Email: ${result.email}\n`;
-                text += '---\n';
-            });
+        let txtContent = '';
+        this.successfulAccounts.forEach((account, index) => {
+            if (index > 0) txtContent += '\n';
+            txtContent += `Username: ${account.username}\n`;
+            txtContent += `Password: ${account.password}\n`;
+            txtContent += `Domain: ${account.domain}\n`;
+            txtContent += `Login: https://${account.domain}:2083\n`;
+            txtContent += '---\n';
+        });
 
-            await navigator.clipboard.writeText(text);
-            this.showToast('success', 'Results copied to clipboard');
-        } catch (error) {
-            console.error('Copy error:', error);
-            this.showToast('error', 'Failed to copy results');
-        }
+        const blob = new Blob([txtContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cpanel-accounts-${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showToast('success', 'Accounts exported to TXT file');
     }
 
     /**
-     * Download results as CSV
+     * Export successful accounts to CSV format
      */
-    downloadCsv() {
-        if (!this.currentProcessId) {
-            this.showToast('warning', 'No results to download');
+    exportAccountsToCsv() {
+        if (!this.successfulAccounts || this.successfulAccounts.length === 0) {
+            this.showToast('error', 'No successful accounts to export');
             return;
         }
 
-        const url = `/api/process/${this.currentProcessId}/export?format=csv`;
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `cpanel_results_${this.currentProcessId}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        this.showToast('info', 'CSV file downloaded');
+        const headers = ['Domain', 'Username', 'Password', 'Email', 'cPanel Login'];
+        const rows = [];
+
+        this.successfulAccounts.forEach(account => {
+            rows.push([
+                account.domain,
+                account.username,
+                account.password,
+                account.email,
+                `https://${account.domain}:2083`
+            ]);
+        });
+
+        const csvContent = [headers, ...rows]
+            .map(row => row.map(field => `"${field.toString().replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cpanel-accounts-${Date.now()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showToast('success', 'Accounts exported to CSV file');
     }
 
     /**
@@ -1140,22 +1176,33 @@ class BulkCreatorApp {
      */
     showToast(type, message, duration = 5000) {
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `
+            <div class="toast-content">
+                <span class="toast-message">${message}</span>
+                <button class="toast-close">&times;</button>
+            </div>
+        `;
+
         this.elements.toastContainer.appendChild(toast);
-        
+
+        // Close button functionality
+        const closeBtn = toast.querySelector('.toast-close');
+        closeBtn.addEventListener('click', () => {
+            toast.remove();
+        });
+
+        // Auto remove after duration
         setTimeout(() => {
             if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
+                toast.remove();
             }
         }, duration);
-        
-        toast.addEventListener('click', () => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
-            }
-        });
+
+        // Animate in
+        setTimeout(() => {
+            toast.classList.add('toast-show');
+        }, 10);
     }
 }
 

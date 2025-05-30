@@ -42,8 +42,14 @@ const accountGenerationSchema = Joi.object({
   domains: Joi.array().items(domainSchema).min(1).max(1000).required(),
   emailTemplate: Joi.string().email().optional(),
   plan: Joi.string().optional(),
-  quota: Joi.number().positive().optional(),
-  bwlimit: Joi.number().positive().optional(),
+  quota: Joi.alternatives().try(
+    Joi.number().positive(),
+    Joi.string().valid('unlimited')
+  ).optional(),
+  bwlimit: Joi.alternatives().try(
+    Joi.number().positive(),
+    Joi.string().valid('unlimited')
+  ).optional(),
   maxaddons: Joi.number().integer().min(0).optional(),
   maxparked: Joi.number().integer().min(0).optional(),
   maxsubs: Joi.number().integer().min(0).optional(),

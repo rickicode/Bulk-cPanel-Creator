@@ -14,8 +14,8 @@ router.use('/process', processRoutes);
 router.get('/', (req, res) => {
   res.json({
     name: 'cPanel Bulk Creator API',
-    version: '1.0.0',
-    description: 'API for bulk cPanel account creation through WHM',
+    version: '2.0.0',
+    description: 'REST API for bulk cPanel account creation through WHM with polling support',
     endpoints: {
       whm: {
         'POST /api/whm/validate': 'Validate WHM credentials',
@@ -24,24 +24,23 @@ router.get('/', (req, res) => {
       },
       bulk: {
         'POST /api/bulk/create': 'Start bulk account creation',
-        'GET /api/bulk/validate-domains': 'Validate domains list'
+        'GET /api/bulk/validate-domains': 'Validate domains list (GET)',
+        'POST /api/bulk/validate-domains': 'Validate domains list (POST)'
       },
       process: {
-        'GET /api/process/:id': 'Get process status',
-        'DELETE /api/process/:id': 'Cancel process',
-        'GET /api/process': 'Get all active processes'
+        'GET /api/process/:id/status': 'Get process status and progress',
+        'GET /api/process/:id/logs': 'Get process logs',
+        'GET /api/process/active': 'Get all active processes',
+        'GET /api/process/stats': 'Get server statistics',
+        'DELETE /api/process/:id': 'Cancel/delete process'
       }
     },
-    websocket: {
-      endpoint: '/ws',
-      events: {
-        connected: 'Connection established',
-        'process-started': 'Process started',
-        'process-update': 'Process update',
-        'process-completed': 'Process completed',
-        'process-failed': 'Process failed',
-        log: 'Log message',
-        progress: 'Progress update'
+    polling: {
+      description: 'Use REST API polling instead of websockets',
+      recommendedInterval: '3000ms',
+      endpoints: {
+        status: 'GET /api/process/:id/status',
+        logs: 'GET /api/process/:id/logs'
       }
     }
   });

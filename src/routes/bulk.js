@@ -8,10 +8,10 @@ const router = express.Router();
 // Initialize BulkCreator (will be set by middleware)
 let bulkCreator = null;
 
-// Middleware to initialize BulkCreator with socketManager
+// Middleware to initialize BulkCreator with processStateManager
 router.use((req, res, next) => {
-  if (!bulkCreator && req.socketManager) {
-    bulkCreator = new BulkCreator(req.socketManager);
+  if (!bulkCreator && req.processStateManager) {
+    bulkCreator = new BulkCreator(req.processStateManager);
   }
   next();
 });
@@ -227,8 +227,8 @@ router.get('/template', (req, res) => {
 
     if (format === 'csv') {
       const csvContent = [
-        'domain,email,plan,quota,bwlimit',
-        'example1.com,admin@example1.com,default,unlimited,unlimited',
+        'domain,email,plan',
+        'example1.com,admin@example1.com,default',
         'example2.com,admin@example2.com,basic,1000,10000',
         'example3.com,admin@example3.com,premium,unlimited,unlimited'
       ].join('\n');
@@ -251,11 +251,7 @@ router.get('/template', (req, res) => {
           "example3.com"
         ],
         emailTemplate: "admin@{domain}",
-        plan: "default",
-        quota: "unlimited",
-        bwlimit: "unlimited",
-        hasshell: false,
-        cgi: true
+        plan: "default"
       };
 
       res.json({

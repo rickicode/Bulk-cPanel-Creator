@@ -8,8 +8,8 @@ const {
 } = require('../utils/validator');
 
 class BulkCreator {
-  constructor(socketManager) {
-    this.socketManager = socketManager;
+  constructor(processStateManager) {
+    this.processStateManager = processStateManager;
     this.activeProcesses = new Map();
     this.maxConcurrent = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS) || 5;
     this.batchSize = parseInt(process.env.BATCH_SIZE) || 10;
@@ -71,7 +71,7 @@ class BulkCreator {
       this.activeProcesses.set(processId, processData);
 
       // Start the process
-      this.socketManager.startProcess(processId, {
+      this.processStateManager.startProcess(processId, {
         type: 'bulk-account-creation',
         totalDomains: processData.totalDomains,
         invalidDomains: processData.invalidDomains,
@@ -80,7 +80,7 @@ class BulkCreator {
 
       // Send validation results
       if (domainValidation.invalid.length > 0 || domainValidation.duplicates.length > 0) {
-        this.socketManager.sendLog(processId, {
+        this.processStateManager.addLog(processId, {
           level: 'warn',
           message: 'Domain validation issues detected',
           data: {
@@ -94,7 +94,7 @@ class BulkCreator {
       this.processDomainsInBatches(processId, whmApi)
         .catch(error => {
           logger.error('Bulk creation process failed:', { processId, error: error.message });
-          this.socketManager.failProcess(processId, error);
+          this.processStateManager.failProcess(processId, error);
         });
 
       return {
@@ -110,7 +110,7 @@ class BulkCreator {
       logger.error('Failed to start bulk creation:', { error: error.message });
       
       if (this.activeProcesses.has(processId)) {
-        this.socketManager.failProcess(processId, error);
+        this.processStateManager.failProcess(processId, error);
       }
       
       throw error;
@@ -129,7 +129,7 @@ class BulkCreator {
     const domains = processData.requestData.domains;
     const batches = this.createBatches(domains, this.batchSize);
 
-    this.socketManager.sendLog(processId, {
+    this.processStateManager.addLog(processId, {
       level: 'info',
       message: `Starting batch processing: ${batches.length} batches, ${domains.length} total domains`
     });
@@ -138,7 +138,7 @@ class BulkCreator {
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
         
-        this.socketManager.sendLog(processId, {
+        this.processStateManager.addLog(processId, {
           level: 'info',
           message: `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} domains)`
         });
@@ -157,7 +157,7 @@ class BulkCreator {
 
       // Complete the process
       const finalData = this.activeProcesses.get(processId);
-      this.socketManager.completeProcess(processId, {
+      this.processStateManager.completeProcess(processId, {
         totalProcessed: finalData.stats.processed,
         successful: finalData.stats.successful,
         failed: finalData.stats.failed,
@@ -166,7 +166,7 @@ class BulkCreator {
       });
 
     } catch (error) {
-      this.socketManager.failProcess(processId, error);
+      this.processStateManager.failProcess(processId, error);
       throw error;
     }
   }
@@ -182,7 +182,7 @@ class BulkCreator {
     // Process with concurrency limit
     const results = await this.processWithConcurrencyLimit(promises, this.maxConcurrent);
     
-    this.socketManager.sendLog(processId, {
+    this.processStateManager.addLog(processId, {
       level: 'info',
       message: `Batch ${batchNumber} completed`,
       data: {
@@ -205,7 +205,7 @@ class BulkCreator {
     }
 
     try {
-      this.socketManager.sendLog(processId, {
+      this.processStateManager.addLog(processId, {
         level: 'info',
         message: `Processing domain: ${domain}`,
         data: { domain, batchNumber, domainIndex }
@@ -225,7 +225,7 @@ class BulkCreator {
         processData.stats.skipped++;
         processData.stats.processed++;
 
-        this.socketManager.sendLog(processId, {
+        this.processStateManager.addLog(processId, {
           level: 'warn',
           message: `Domain ${domain} already exists, skipping`
         });
@@ -244,14 +244,14 @@ class BulkCreator {
         password,
         email,
         plan: processData.requestData.plan,
-        quota: processData.requestData.quota,
-        bwlimit: processData.requestData.bwlimit,
+        quota: "unlimited",
+        bwlimit: "unlimited",
         maxaddons: processData.requestData.maxaddons,
         maxparked: processData.requestData.maxparked,
         maxsubs: processData.requestData.maxsubs,
         maxsql: processData.requestData.maxsql,
-        hasshell: processData.requestData.hasshell,
-        cgi: processData.requestData.cgi
+        hasshell: false,
+        cgi: true
       };
 
       // Create the account
@@ -271,10 +271,10 @@ class BulkCreator {
         processData.stats.successful++;
         processData.stats.processed++;
 
-        this.socketManager.sendLog(processId, {
+        this.processStateManager.addLog(processId, {
           level: 'info',
           message: `Account created successfully for ${domain}`,
-          data: { domain, username }
+          data: { domain, username, password, email }
         });
 
         return result;
@@ -291,7 +291,7 @@ class BulkCreator {
         processData.stats.failed++;
         processData.stats.processed++;
 
-        this.socketManager.sendLog(processId, {
+        this.processStateManager.addLog(processId, {
           level: 'error',
           message: `Failed to create account for ${domain}: ${createResult.error}`,
           data: { domain, username, error: createResult.error }
@@ -312,7 +312,7 @@ class BulkCreator {
       processData.stats.failed++;
       processData.stats.processed++;
 
-      this.socketManager.sendLog(processId, {
+      this.processStateManager.addLog(processId, {
         level: 'error',
         message: `Error processing domain ${domain}: ${error.message}`,
         data: { domain, error: error.message }
@@ -329,7 +329,7 @@ class BulkCreator {
     const processData = this.activeProcesses.get(processId);
     if (!processData) return;
 
-    this.socketManager.sendProgress(processId, {
+    this.processStateManager.updateProgress(processId, {
       current: processData.stats.processed,
       total: processData.totalDomains,
       successful: processData.stats.successful,
@@ -399,12 +399,12 @@ class BulkCreator {
     processData.status = 'cancelled';
     this.activeProcesses.delete(processId);
 
-    this.socketManager.sendLog(processId, {
+    this.processStateManager.addLog(processId, {
       level: 'warn',
       message: 'Process cancelled by user'
     });
 
-    this.socketManager.failProcess(processId, new Error('Process cancelled by user'));
+    this.processStateManager.failProcess(processId, new Error('Process cancelled by user'));
 
     return { success: true, message: 'Process cancelled' };
   }
