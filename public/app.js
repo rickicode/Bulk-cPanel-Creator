@@ -14,6 +14,7 @@ class BulkCreatorApp {
         this.pollingInterval = null;
         this.pollingFrequency = 2000; // 2 second
         this.lastLogCount = 0;
+        this.clearDataTimeout = null; // For debouncing clear data action
         
         this.init();
     }
@@ -115,6 +116,7 @@ class BulkCreatorApp {
             monitorSection: document.getElementById('monitorSection'),
             successfulAccountsSection: document.getElementById('successfulAccountsSection'),
             successfulAccountsList: document.getElementById('successfulAccountsList'),
+            successfulAccountsCount: document.getElementById('successfulAccountsCount'),
             
             // Logs
             logsContent: document.getElementById('logsContent'),
@@ -180,6 +182,14 @@ class BulkCreatorApp {
         });
 
         this.elements.domainList.addEventListener('input', () => {
+            // Clear previous data when user starts typing new domains
+            if (this.currentProcessId || this.successfulAccounts.length > 0) {
+                // Add a small delay to avoid clearing on every keystroke
+                clearTimeout(this.clearDataTimeout);
+                this.clearDataTimeout = setTimeout(() => {
+                    this.clearPreviousData();
+                }, 1000); // Wait 1 second after user stops typing
+            }
             this.validateDomainFields();
         });
 
@@ -829,7 +839,14 @@ class BulkCreatorApp {
         this.elements.domainValidation.classList.add('hidden');
         this.validationResults = null;
         this.updateStartButtonState();
-        this.showToast('info', 'Domains cleared');
+        
+        // Clear previous bulk creation data
+        if (this.currentProcessId || this.successfulAccounts.length > 0) {
+            this.clearPreviousData();
+            this.showToast('info', 'Domains and previous data cleared');
+        } else {
+            this.showToast('info', 'Domains cleared');
+        }
     }
 
     /**
@@ -840,6 +857,9 @@ class BulkCreatorApp {
             this.showToast('error', 'Please validate domains first');
             return;
         }
+
+        // Clear previous data before starting new bulk creation
+        this.clearPreviousData();
 
         this.showLoading('Starting bulk creation...');
         
@@ -1173,6 +1193,40 @@ class BulkCreatorApp {
     clearSuccessfulAccountsList() {
         this.elements.successfulAccountsList.innerHTML = '';
         this.successfulAccounts = [];
+        this.elements.successfulAccountsCount.textContent = '0';
+    }
+
+    /**
+     * Clear all previous data before starting new bulk creation
+     */
+    clearPreviousData() {
+        // Clear successful accounts
+        this.clearSuccessfulAccountsList();
+        
+        // Hide successful accounts section
+        this.elements.successfulAccountsSection.classList.add('hidden');
+        
+        // Reset progress bar
+        this.updateProgress(0, 0, 'Initializing...');
+        
+        // Reset statistics counters
+        this.elements.processedCount.textContent = '0';
+        this.elements.successCount.textContent = '0';
+        this.elements.failedCount.textContent = '0';
+        this.elements.skippedCount.textContent = '0';
+        
+        // Clear logs
+        this.elements.logsContent.innerHTML = '';
+        
+        // Hide monitor section initially
+        this.elements.monitorSection.classList.add('hidden');
+        
+        // Reset process state
+        this.currentProcessId = null;
+        this.lastLogCount = 0;
+        
+        // Show toast notification
+        this.showToast('info', 'Previous data cleared. Starting fresh...');
     }
 
     /**
@@ -1180,6 +1234,9 @@ class BulkCreatorApp {
      */
     addSuccessfulAccount(accountData) {
         this.successfulAccounts.push(accountData);
+
+        // Update counter
+        this.elements.successfulAccountsCount.textContent = this.successfulAccounts.length;
 
         const accountDiv = document.createElement('div');
         accountDiv.className = 'account-item';

@@ -6,6 +6,10 @@ const path = require('path');
 
 // Simple console logger for serverless environment
 const logger = {
+  debug: (message, meta = {}) => {
+    const timestamp = new Date().toISOString();
+    console.log(`${timestamp} [DEBUG]: ${message}`, Object.keys(meta || {}).length > 0 ? meta : '');
+  },
   info: (message, meta = {}) => {
     const timestamp = new Date().toISOString();
     console.log(`${timestamp} [INFO]: ${message}`, Object.keys(meta || {}).length > 0 ? meta : '');
@@ -17,6 +21,12 @@ const logger = {
   error: (message, meta = {}) => {
     const timestamp = new Date().toISOString();
     console.error(`${timestamp} [ERROR]: ${message}`, Object.keys(meta || {}).length > 0 ? meta : '');
+  },
+  log: (level, message, meta = {}) => {
+    const timestamp = new Date().toISOString();
+    const upperLevel = level.toUpperCase();
+    const logMethod = level === 'error' ? console.error : (level === 'warn' ? console.warn : console.log);
+    logMethod(`${timestamp} [${upperLevel}]: ${message}`, Object.keys(meta || {}).length > 0 ? meta : '');
   }
 };
 
@@ -25,6 +35,9 @@ global.logger = logger;
 
 // Import custom modules with error handling
 let routes;
+let ProcessStateManager;
+let processStateManager;
+
 try {
   // Override the logger import in the modules
   const Module = require('module');
@@ -39,13 +52,49 @@ try {
   
   routes = require('../src/routes');
   
+  // For serverless environment, create a lightweight process manager
+  // Note: In Vercel serverless, state doesn't persist between function calls
+  processStateManager = {
+    startProcess: (processId, processInfo) => {
+      logger.info('Process started (serverless mode)', { processId, ...processInfo });
+      return { processId, status: 'running', startedAt: new Date(), ...processInfo };
+    },
+    updateProgress: (processId, progressData) => {
+      logger.debug('Progress update (serverless mode)', { processId, ...progressData });
+    },
+    addLog: (processId, logEntry) => {
+      logger.log(logEntry.level, `[Process ${processId}] ${logEntry.message}`, logEntry.data);
+    },
+    completeProcess: (processId, completionData) => {
+      logger.info('Process completed (serverless mode)', { processId, ...completionData });
+    },
+    failProcess: (processId, error) => {
+      logger.error('Process failed (serverless mode)', { processId, error: error.message });
+    },
+    getProcessStatus: (processId) => {
+      return { processId, status: 'unknown', message: 'Serverless mode - status not persistent' };
+    },
+    getProcessLogs: (processId) => {
+      return { processId, logs: [], message: 'Serverless mode - logs not persistent' };
+    },
+    getActiveProcesses: () => {
+      return [];
+    },
+    getStats: () => {
+      return { activeProcesses: 0, totalLogs: 0 };
+    },
+    deleteProcess: (processId) => {
+      logger.info('Process deleted (serverless mode)', { processId });
+    }
+  };
+  
   // Restore original require
   Module.prototype.require = originalRequire;
   
-  logger.info('Routes loaded successfully');
+  logger.info('Routes and ProcessStateManager loaded successfully');
   
 } catch (error) {
-  logger.error('Failed to import routes', {
+  logger.error('Failed to import routes or ProcessStateManager', {
     error: error.message,
     stack: error.stack
   });
@@ -102,14 +151,37 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Trust proxy for Vercel
 app.set('trust proxy', 1);
 
+// Make processStateManager available to routes
+if (processStateManager) {
+  app.use((req, res, next) => {
+    req.processStateManager = processStateManager;
+    next();
+  });
+}
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({
+  const healthData = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     platform: 'vercel'
-  });
+  };
+  
+  // Add process stats if processStateManager is available
+  if (processStateManager) {
+    try {
+      const stats = processStateManager.getStats();
+      healthData.processes = {
+        active: stats.activeProcesses,
+        totalLogs: stats.totalLogs
+      };
+    } catch (error) {
+      logger.warn('Failed to get process stats for health check', { error: error.message });
+    }
+  }
+  
+  res.json(healthData);
 });
 
 // API routes

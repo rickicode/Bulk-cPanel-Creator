@@ -265,16 +265,40 @@
         <section id="successfulAccountsSection" class="section full-width hidden">
             <div class="section-header">
                 <h2 class="section-title">Successful Accounts</h2>
-                <p class="section-description">Successfully created cPanel accounts</p>
+                <p class="section-description">Successfully created cPanel accounts with complete login details</p>
             </div>
             
-            <div class="form-actions">
-                <button id="exportAccountsBtn" class="btn btn-primary">
-                    Export as TXT
-                </button>
-                <button id="exportAccountsCsvBtn" class="btn btn-secondary">
-                    Export as CSV
-                </button>
+            <!-- Summary Card -->
+            <div class="accounts-summary">
+                <div class="summary-card">
+                    <div class="summary-icon">✓</div>
+                    <div class="summary-info">
+                        <div class="summary-count" id="successfulAccountsCount">0</div>
+                        <div class="summary-label">Accounts Created</div>
+                    </div>
+                </div>
+                <div class="summary-actions">
+                    <button id="exportAccountsBtn" class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M16 13H8"/>
+                            <path d="M16 17H8"/>
+                            <path d="M10 9H8"/>
+                        </svg>
+                        Export as TXT
+                    </button>
+                    <button id="exportAccountsCsvBtn" class="btn btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M16 13H8"/>
+                            <path d="M16 17H8"/>
+                            <path d="M10 9H8"/>
+                        </svg>
+                        Export as CSV
+                    </button>
+                </div>
             </div>
             
             <div id="successfulAccountsList" class="accounts-list"></div>
