@@ -1,6 +1,4 @@
 const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -44,11 +42,20 @@ try {
   // Restore original require
   Module.prototype.require = originalRequire;
   
+  logger.info('Routes loaded successfully');
+  
 } catch (error) {
-  logger.error('Failed to import routes', { error: error.message });
+  logger.error('Failed to import routes', {
+    error: error.message,
+    stack: error.stack
+  });
   routes = express.Router();
   routes.get('/', (req, res) => {
-    res.json({ error: 'Routes not available', message: 'API is in recovery mode' });
+    res.json({
+      error: 'Routes not available',
+      message: 'API is in recovery mode',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   });
 }
 
@@ -68,9 +75,9 @@ app.use(helmet({
   },
 }));
 
-// CORS configuration
+// CORS configuration for Vercel
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? false : "*",
+  origin: true,
   credentials: true
 }));
 
@@ -95,9 +102,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Trust proxy for Vercel
 app.set('trust proxy', 1);
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '../public')));
-
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
@@ -111,25 +115,49 @@ app.get('/api/health', (req, res) => {
 // API routes
 app.use('/api', routes);
 
-// Serve main page for root requests
+// For non-API routes, redirect to Vercel's static file handling
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public', 'index.html'));
+  res.redirect('/index.html');
 });
 
-// Catch-all handler for SPA
+// Catch-all for non-API routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public', 'index.html'));
+  // Let Vercel handle static files
+  if (req.path.match(/\.(css|js|html|ico|png|jpg|jpeg|gif|svg)$/)) {
+    res.status(404).json({ error: 'File not found' });
+  } else {
+    res.redirect('/index.html');
+  }
 });
 
 // Error handling middleware
 app.use((error, req, res, next) => {
-  console.error('Server error:', error);
+  logger.error('Server error', {
+    error: error.message,
+    stack: error.stack,
+    path: req.path,
+    method: req.method
+  });
+  
   res.status(500).json({
     success: false,
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+    timestamp: new Date().toISOString()
   });
 });
+
+// Handle 404 for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'API endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
+logger.info('Express app initialized successfully');
 
 // Export for Vercel
 module.exports = app;

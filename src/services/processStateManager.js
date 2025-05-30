@@ -8,10 +8,8 @@ class ProcessStateManager {
     
     logger.info('Process State Manager initialized');
     
-    // Clean up completed processes after 5 minutes
-    setInterval(() => {
-      this.cleanupOldProcesses();
-    }, 300000); // 5 minutes
+    // Note: Removed setInterval as it doesn't work in serverless environments
+    // Cleanup will be called manually when needed
   }
 
   /**
