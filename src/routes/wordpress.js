@@ -295,6 +295,12 @@ async function processWordPressAdminChanges(processId, sshConfig, wpConfig, doma
     }
 }
 
+// Generate random email with WordPress domain
+function generateRandomEmail(domain) {
+    const randomString = Math.random().toString(36).substring(2, 15);
+    return `${randomString}@${domain}`;
+}
+
 // Process single domain
 async function processSingleDomain(ssh, domain, wpConfig, processState) {
     try {
@@ -315,7 +321,7 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
         
         addLog(processState, `Found cPanel user: ${cpanelUser}`, 'info');
         
-        // Step 2: Get current WordPress admin username
+        // Step 2: Get current WordPress admin username for password change
         addLog(processState, `Getting WordPress admin username...`, 'info');
         
         const wpUserCmd = `wp user list --path=/home/${cpanelUser}/public_html --role=administrator --field=user_login --allow-root`;
@@ -365,53 +371,58 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
         
         addLog(processState, `WordPress admin password updated successfully for user: ${oldWpUser}`, 'success');
         
-        // Step 5: Generate magic login link using WP-CLI
-        addLog(processState, `Generating magic login link for ${oldWpUser}...`, 'info');
+        let magicLinkData = null;
+        let standardLoginUrl = `https://${domain}/wp-admin/`;
         
-        let magicLink = null;
-        let hasMagicLink = false;
+        // Step 5: Create magic login link
+        addLog(processState, `Creating magic login link for ${domain}...`, 'info');
         
         try {
-            // Try multiple magic link methods
-            const magicLinkCommands = [
-                // Method 1: Try wp-magic-login plugin
-                `wp user magic-login ${oldWpUser} --path=/home/${cpanelUser}/public_html --allow-root`,
-                // Method 2: Try wp-temporary-login-without-password plugin
-                `wp user temporary-login ${oldWpUser} --path=/home/${cpanelUser}/public_html --allow-root`,
-                // Method 3: Generate autologin URL with wp eval
-                `wp eval "echo add_query_arg(array('autologin' => wp_create_nonce('autologin_' . ${oldWpUser}), 'user_id' => ${oldWpUser}), admin_url());" --path=/home/${cpanelUser}/public_html --allow-root`
-            ];
+            // Generate random email with WordPress domain
+            const randomEmail = generateRandomEmail(domain);
+            addLog(processState, `Generated random email: ${randomEmail}`, 'info');
             
-            for (const cmd of magicLinkCommands) {
-                addLog(processState, `Trying magic link command...`, 'info');
-                const result = await ssh.execCommand(cmd);
-                
-                if (result.code === 0 && result.stdout.trim() && result.stdout.trim() !== 'wp-admin/') {
-                    magicLink = result.stdout.trim();
+            // Create temporary login using wp tlwp create command
+            const tlwpCreateCmd = `wp tlwp create --email=${randomEmail} --role=administrator --allow-root --path=/home/${cpanelUser}/public_html`;
+            addLog(processState, `Running command: ${tlwpCreateCmd}`, 'info');
+            const tlwpResult = await ssh.execCommand(tlwpCreateCmd);
+            
+            addLog(processState, `TLWP command result - Code: ${tlwpResult.code}, Output: ${tlwpResult.stdout}, Error: ${tlwpResult.stderr}`, 'info');
+            
+            if (tlwpResult.code === 0 && tlwpResult.stdout.trim()) {
+                // Parse JSON output from wp tlwp create command
+                try {
+                    const tlwpData = JSON.parse(tlwpResult.stdout.trim());
                     
-                    // Ensure the link includes the domain if it's relative
-                    if (magicLink.startsWith('/')) {
-                        magicLink = `https://${domain}${magicLink}`;
-                    } else if (!magicLink.startsWith('http')) {
-                        magicLink = `https://${domain}/wp-admin/${magicLink}`;
+                    // Validate required fields in JSON response
+                    if (tlwpData.status === 'success' && tlwpData.login_url) {
+                        magicLinkData = {
+                            username: tlwpData.username || 'tempuser',
+                            email: tlwpData.email || randomEmail,
+                            userId: tlwpData.user_id,
+                            role: tlwpData.role || 'administrator',
+                            loginUrl: tlwpData.login_url,
+                            expires: tlwpData.expires,
+                            maxLoginLimit: tlwpData.max_login_limit || 1,
+                            status: tlwpData.status,
+                            message: tlwpData.message
+                        };
+                        
+                        addLog(processState, `✓ Magic login created successfully`, 'success');
+                        addLog(processState, `Magic Username: ${magicLinkData.username}`, 'info');
+                        addLog(processState, `Magic User ID: ${magicLinkData.userId}`, 'info');
+                        addLog(processState, `Expires: ${magicLinkData.expires}`, 'info');
+                    } else {
+                        addLog(processState, `Magic link creation failed: ${tlwpData.message || 'Unknown error'}`, 'warning');
                     }
-                    
-                    hasMagicLink = true;
-                    addLog(processState, `✓ Magic login link generated successfully`, 'success');
-                    break;
+                } catch (parseError) {
+                    addLog(processState, `Failed to parse TLWP output as JSON: ${parseError.message}`, 'warning');
                 }
+            } else {
+                addLog(processState, `Magic link creation failed: ${tlwpResult.stderr}`, 'warning');
             }
-            
-            // If no magic link worked, use standard login URL
-            if (!hasMagicLink) {
-                magicLink = `https://${domain}/wp-admin/`;
-                addLog(processState, `Magic link plugins not available, using standard login URL`, 'warning');
-            }
-            
         } catch (error) {
-            // Fallback: generate standard login URL
-            magicLink = `https://${domain}/wp-admin/`;
-            addLog(processState, `Failed to generate magic link, using standard login URL: ${error.message}`, 'warning');
+            addLog(processState, `Magic link creation error: ${error.message}`, 'warning');
         }
         
         return {
@@ -421,8 +432,12 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
             wpUser: oldWpUser,
             wpEmail: wpEmail,
             newWpPassword: wpConfig.newPassword,
-            loginUrl: magicLink,
-            hasMagicLink: hasMagicLink
+            loginUrl: magicLinkData ? magicLinkData.loginUrl : standardLoginUrl,
+            hasMagicLink: !!magicLinkData,
+            tempUser: magicLinkData ? magicLinkData.username : null,
+            tempUserId: magicLinkData ? magicLinkData.userId : null,
+            expires: magicLinkData ? magicLinkData.expires : null,
+            maxLoginLimit: magicLinkData ? magicLinkData.maxLoginLimit : null
         };
         
     } catch (error) {

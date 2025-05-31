@@ -1579,3 +1579,40 @@ body {
 .confirmation-item input[type="checkbox"]:checked ~ .confirmation-text small {
     color: #7f1d1d;
 }
+/* Info Box */
+.info-box {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    background: rgba(37, 99, 235, 0.05);
+    border: 1px solid rgba(37, 99, 235, 0.15);
+    border-radius: var(--radius-lg);
+    margin-top: var(--spacing-lg);
+}
+
+.info-box svg {
+    width: 20px;
+    height: 20px;
+    color: var(--primary-color);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.info-box div {
+    flex: 1;
+}
+
+.info-box strong {
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.info-box p {
+    margin: 0;
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}

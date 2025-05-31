@@ -484,10 +484,10 @@ class WordPressAdminChanger {
                         </div>
                         ${result.loginUrl ? `
                         <div class="detail-row">
-                            <span class="detail-label">${result.hasMagicLink ? 'Magic Login Link:' : 'Login URL:'}</span>
+                            <span class="detail-label">Login URL:</span>
                             <div class="login-link-container">
-                                <a href="${result.loginUrl}" target="_blank" class="login-link magic-link">
-                                    ${result.hasMagicLink ? '🔗 Auto Login' : '🔗 Login Page'}
+                                <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
+                                    ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
                                 </a>
                                 <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
                                     📋
