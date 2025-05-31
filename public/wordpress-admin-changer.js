@@ -19,12 +19,78 @@ class WordPressAdminChanger {
         this.processId = null;
         this.results = [];
         
-        this.initializeEventListeners();
+        this.init();
+    }
+
+    /**
+     * Initialize the application
+     */
+    init() {
+        this.initializeElements();
+        this.initializeParticles();
+        this.setupEventListeners();
         this.loadSavedData();
         this.updateUI();
     }
 
-    initializeEventListeners() {
+    /**
+     * Get DOM elements and store references
+     */
+    initializeElements() {
+        this.elements = {
+            // Toast container
+            toastContainer: document.getElementById('toastContainer'),
+            
+            // Loading overlay
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            loadingText: document.getElementById('loadingText'),
+            
+            // Status indicator
+            statusText: document.querySelector('.status-text'),
+            statusDot: document.querySelector('.status-dot')
+        };
+        
+        // Set initial status
+        if (this.elements.statusText) {
+            this.elements.statusText.textContent = 'Ready';
+        }
+    }
+
+    /**
+     * Initialize particle background with CSS animation
+     */
+    initializeParticles() {
+        const particlesContainer = document.getElementById('particles-js');
+        if (!particlesContainer) return;
+
+        // Create particles using CSS animations
+        for (let i = 0; i < 50; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            
+            // Random positioning and animation properties
+            const size = Math.random() * 4 + 2;
+            const left = Math.random() * 100;
+            const animationDuration = Math.random() * 20 + 10;
+            const animationDelay = Math.random() * 20;
+            
+            particle.style.cssText = `
+                position: absolute;
+                width: ${size}px;
+                height: ${size}px;
+                background: #2563eb;
+                border-radius: 50%;
+                left: ${left}%;
+                opacity: ${Math.random() * 0.5 + 0.1};
+                animation: float ${animationDuration}s linear infinite;
+                animation-delay: ${animationDelay}s;
+            `;
+            
+            particlesContainer.appendChild(particle);
+        }
+    }
+
+    setupEventListeners() {
         // SSH Configuration
         document.getElementById('sshHost').addEventListener('input', () => this.updateConfig());
         document.getElementById('sshPort').addEventListener('input', () => this.updateConfig());
@@ -395,7 +461,7 @@ class WordPressAdminChanger {
                 <div class="account-header">
                     <div class="account-domain">${result.domain}</div>
                     <div class="account-status ${result.success ? 'status-success' : 'status-error'}">
-                        ${result.success ? '✓ Berhasil' : '✗ Gagal'}
+                        ${result.success ? '✓ Success' : '✗ Failed'}
                     </div>
                 </div>
                 <div class="account-details">
@@ -409,9 +475,26 @@ class WordPressAdminChanger {
                             <span class="detail-value">${result.wpUser || 'N/A'}</span>
                         </div>
                         <div class="detail-row">
+                            <span class="detail-label">WP Admin Email:</span>
+                            <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
+                        </div>
+                        <div class="detail-row">
                             <span class="detail-label">New Password:</span>
                             <span class="detail-value password-field">${result.newWpPassword || 'N/A'}</span>
                         </div>
+                        ${result.loginUrl ? `
+                        <div class="detail-row">
+                            <span class="detail-label">${result.hasMagicLink ? 'Magic Login Link:' : 'Login URL:'}</span>
+                            <div class="login-link-container">
+                                <a href="${result.loginUrl}" target="_blank" class="login-link magic-link">
+                                    ${result.hasMagicLink ? '🔗 Auto Login' : '🔗 Login Page'}
+                                </a>
+                                <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
+                                    📋
+                                </button>
+                            </div>
+                        </div>
+                        ` : ''}
                     ` : `
                         <div class="detail-row error">
                             <span class="detail-label">Error:</span>
@@ -427,7 +510,7 @@ class WordPressAdminChanger {
 
     exportResults() {
         if (this.results.length === 0) {
-            this.showToast('Tidak ada hasil untuk diekspor', 'warning');
+            this.showToast('warning', 'No results to export');
             return;
         }
         
@@ -447,7 +530,11 @@ class WordPressAdminChanger {
             content += `Domain: ${result.domain}\n`;
             content += `cPanel User: ${result.cpanelUser}\n`;
             content += `WordPress Admin User: ${result.wpUser}\n`;
+            content += `WordPress Admin Email: ${result.wpEmail || `admin@${result.domain}`}\n`;
             content += `New Password: ${result.newWpPassword}\n`;
+            if (result.loginUrl) {
+                content += `${result.hasMagicLink ? 'Magic Login Link' : 'Login URL'}: ${result.loginUrl}\n`;
+            }
             content += `---\n`;
         });
         
@@ -472,7 +559,7 @@ class WordPressAdminChanger {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        this.showToast('Hasil berhasil diekspor', 'success');
+        this.showToast('success', 'Results exported successfully');
     }
 
     saveData() {
@@ -517,31 +604,69 @@ class WordPressAdminChanger {
         }
     }
 
-    showLoading(message = 'Loading...') {
-        document.getElementById('loadingText').textContent = message;
-        document.getElementById('loadingOverlay').classList.remove('hidden');
+    showLoading(text = 'Loading...') {
+        this.elements.loadingText.textContent = text;
+        this.elements.loadingOverlay.classList.remove('hidden');
     }
 
     hideLoading() {
-        document.getElementById('loadingOverlay').classList.add('hidden');
+        this.elements.loadingOverlay.classList.add('hidden');
     }
 
-    showToast(message, type = 'info') {
+    showToast(type, message, duration = 5000) {
         const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
-        toast.textContent = message;
+        toast.className = `toast ${type}`;
         
-        const container = document.getElementById('toastContainer');
-        container.appendChild(toast);
+        // Icons for different toast types
+        const icons = {
+            success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                      </svg>`,
+            error: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                    </svg>`,
+            warning: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                      </svg>`,
+            info: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
+                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                   </svg>`
+        };
         
-        // Trigger animation
-        setTimeout(() => toast.classList.add('show'), 100);
-        
-        // Remove after delay
+        toast.innerHTML = `
+            ${icons[type] || icons.info}
+            <span class="toast-message">${message}</span>
+            <button class="toast-close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+            </button>
+        `;
+
+        this.elements.toastContainer.appendChild(toast);
+
+        // Close button functionality
+        const closeBtn = toast.querySelector('.toast-close');
+        closeBtn.addEventListener('click', () => {
+            toast.classList.add('removing');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 300);
+        });
+
+        // Auto remove after duration
         setTimeout(() => {
-            toast.classList.remove('show');
-            setTimeout(() => container.removeChild(toast), 300);
-        }, 5000);
+            if (toast.parentNode) {
+                toast.classList.add('removing');
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 300);
+            }
+        }, duration);
     }
 }
 

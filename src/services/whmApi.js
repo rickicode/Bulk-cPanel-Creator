@@ -303,6 +303,95 @@ class WHMApi {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Get account information
+   */
+  async getAccountInfo(username) {
+    try {
+      logger.debug('Getting account info', { username });
+      
+      const response = await this.client.get('/json-api/accountsummary', {
+        params: { user: username }
+      });
+      
+      if (response.data && response.data.acct && response.data.acct.length > 0) {
+        const account = response.data.acct[0];
+        return {
+          success: true,
+          user: account.user,
+          domain: account.domain,
+          email: account.email,
+          plan: account.plan,
+          suspended: account.suspended === '1',
+          created: account.startdate,
+          diskused: account.diskused,
+          disklimit: account.disklimit
+        };
+      } else {
+        // Try alternative method - list all accounts and find the specific one
+        const listResponse = await this.client.get('/json-api/listaccts', {
+          params: { search: username, searchtype: 'user' }
+        });
+        
+        if (listResponse.data && listResponse.data.acct && listResponse.data.acct.length > 0) {
+          const account = listResponse.data.acct[0];
+          return {
+            success: true,
+            user: account.user,
+            domain: account.domain,
+            email: account.email,
+            plan: account.plan,
+            suspended: account.suspended === '1',
+            created: account.startdate
+          };
+        } else {
+          return { success: false, error: 'Account not found' };
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to get account info:', {
+        username,
+        error: error.message
+      });
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Delete cPanel account
+   */
+  async deleteAccount(username) {
+    try {
+      logger.info('Deleting account', { username });
+      
+      const response = await this.client.get('/json-api/removeacct', {
+        params: { user: username }
+      });
+      
+      if (response.data) {
+        if (response.data.result && response.data.result[0] && response.data.result[0].status === 1) {
+          logger.info('Account deleted successfully', { username });
+          return {
+            success: true,
+            message: response.data.result[0].statusmsg || 'Account deleted successfully'
+          };
+        } else {
+          const errorMsg = response.data.result && response.data.result[0] ?
+            response.data.result[0].statusmsg : 'Unknown deletion error';
+          throw new Error(errorMsg);
+        }
+      } else {
+        throw new Error('Invalid response from WHM API');
+      }
+    } catch (error) {
+      logger.error('Account deletion failed:', {
+        username,
+        error: error.message
+      });
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = WHMApi;

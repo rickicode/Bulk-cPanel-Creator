@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>cPanel Bulk Creator</title>
+    <title>cPanel Bulk Delete</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImxpZ2h0bmluZyIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmYmJmMjQ7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6I2Y1OWUwYjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxwYXRoIGQ9Ik0xMyAxMFYzTDQgMTRoN3Y3bDktMTFoLTd6IiBmaWxsPSJ1cmwoI2xpZ2h0bmluZykiIHN0cm9rZT0iI2Q5NzcwNiIgc3Ryb2tlLXdpZHRoPSIwLjUiLz4KPC9zdmc+">
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="cpanel-bulk-delete">
     <div id="particles-js"></div>
     
     <div class="container">
@@ -20,30 +20,30 @@
                         <svg class="logo-icon" viewBox="0 0 24 24" fill="none">
                             <defs>
                                 <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" style="stop-color:#2563eb;stop-opacity:1" />
-                                    <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+                                    <stop offset="0%" style="stop-color:#dc2626;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#b91c1c;stop-opacity:1" />
                                 </linearGradient>
                             </defs>
-                            <path d="M13 10V3L4 14h7v7l9-11h-7z" fill="url(#logoGradient)" stroke="#1e40af" stroke-width="0.5"/>
+                            <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke="url(#logoGradient)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </div>
                     <div class="header-text">
-                        <h1 class="title">cPanel Bulk Creator</h1>
-                        <p class="subtitle">Bulk account creation with Cloudflare DNS integration</p>
+                        <h1 class="title">cPanel Bulk Delete</h1>
+                        <p class="subtitle">Bulk cPanel account deletion with safety confirmation</p>
                     </div>
                 </div>
                 <div class="header-actions">
-                    <a href="wordpress-admin-changer" class="btn btn-secondary">
+                    <a href="index.html" class="btn btn-outline">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        ← Back to Creator
+                    </a>
+                    <a href="wordpress-admin-changer.html" class="btn btn-secondary">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
                         </svg>
                         WordPress Changer
-                    </a>
-                    <a href="cpanel-bulk-delete" class="btn btn-danger">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                        </svg>
-                        Bulk Delete
                     </a>
                     <div class="status-indicator">
                         <div class="status-dot"></div>
@@ -60,9 +60,9 @@
                 <div class="section-header">
                     <h2 class="section-title">
                         <span class="step-number">1</span>
-                        Server Configuration
+                        WHM Server Configuration
                     </h2>
-                    <p class="section-description">Configure your WHM server and optional Cloudflare DNS settings</p>
+                    <p class="section-description">Configure your WHM server credentials for cPanel account deletion</p>
                 </div>
                 
                 <div class="config-container">
@@ -104,114 +104,44 @@
                                     <option value="password">Password</option>
                                 </select>
                             </div>
-                            <div class="form-field" id="apiTokenGroup">
+                            <div class="form-field" id="tokenField">
                                 <label for="whmApiToken">API Token</label>
-                                <input type="password" id="whmApiToken" placeholder="Your WHM API token">
+                                <input type="password" id="whmApiToken" placeholder="Your WHM API Token">
                             </div>
-                            <div class="form-field hidden" id="passwordGroup">
+                            <div class="form-field hidden" id="passwordField">
                                 <label for="whmPassword">Password</label>
-                                <input type="password" id="whmPassword" placeholder="Your WHM password">
+                                <input type="password" id="whmPassword" placeholder="Your WHM Password">
                             </div>
                         </div>
                         
                         <div class="form-actions">
-                            <button id="testConnectionBtn" class="btn btn-primary" disabled>
+                            <button id="testWhmBtn" class="btn btn-primary" disabled>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
                                 </svg>
-                                Test Connection
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Account Settings -->
-                    <div class="config-group">
-                        <h3 class="group-title">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                            </svg>
-                            Account Settings
-                        </h3>
-                        <div class="form-grid">
-                            <div class="form-field">
-                                <label for="packagePlan">Package Plan</label>
-                                <select id="packagePlan">
-                                    <option value="default">Default</option>
-                                </select>
-                            </div>
-                            <div class="form-field">
-                                <label for="emailTemplate">Email Template</label>
-                                <input type="text" id="emailTemplate" placeholder="admin@{domain}" value="admin@{domain}">
-                                <small class="help-text">Use {domain} as placeholder for domain name</small>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Cloudflare DNS (Optional) -->
-                    <div class="config-group">
-                        <h3 class="group-title">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4C9.11 4 6.6 5.64 5.35 8.04C2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
-                            </svg>
-                            Cloudflare DNS Integration
-                            <span class="optional">(Optional)</span>
-                        </h3>
-                        <div class="form-grid">
-                            <div class="form-field">
-                                <label for="cfEmail">Cloudflare Email</label>
-                                <input type="email" id="cfEmail" placeholder="your-email@example.com">
-                            </div>
-                            <div class="form-field">
-                                <label for="cfApiKey">Global API Key</label>
-                                <input type="password" id="cfApiKey" placeholder="Your Cloudflare Global API Key">
-                            </div>
-                            <div class="form-field">
-                                <label for="cfRecordType">DNS Record Type</label>
-                                <select id="cfRecordType">
-                                    <option value="A">A Record</option>
-                                    <option value="CNAME">CNAME Record</option>
-                                </select>
-                            </div>
-                            <div class="form-field" id="cfValueGroup">
-                                <label for="cfRecordValue">Record Value</label>
-                                <input type="text" id="cfRecordValue" placeholder="IP Address or Domain">
-                                <small class="help-text" id="cfValueHelp">Enter IP address for A record</small>
-                            </div>
-                        </div>
-                        <div class="form-actions">
-                            <button id="testCfConnectionBtn" class="btn btn-secondary" disabled>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                                </svg>
-                                Test Cloudflare
+                                Test WHM Connection
                             </button>
                         </div>
                     </div>
                 </div>
             </section>
-            
+
             <!-- Step 2: Domain List -->
             <section class="domain-section">
                 <div class="section-header">
                     <h2 class="section-title">
                         <span class="step-number">2</span>
-                        Domain List
+                        Domains to Delete
                     </h2>
-                    <p class="section-description">Enter the domains you want to create cPanel accounts for</p>
+                    <p class="section-description">Enter the domains whose cPanel accounts will be deleted (one per line)</p>
                 </div>
                 
                 <div class="domain-input-container">
                     <div class="domain-input">
                         <textarea id="domainList" class="domain-textarea"
-                                  placeholder="example1.com&#10;example2.com&#10;example3.com&#10;&#10;Enter one domain per line..."></textarea>
+                                  placeholder="example1.com&#10;example2.com&#10;example3.com&#10;&#10;Enter domains (one per line)..."></textarea>
                     </div>
                     <div class="domain-actions">
-                        <button id="validateDomainsBtn" class="btn btn-secondary" disabled>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                            Validate Domains
-                        </button>
                         <button id="clearDomainsBtn" class="btn btn-outline">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -223,62 +153,69 @@
             </section>
         </div>
 
-        <!-- Domain Validation Results Section -->
-        <section id="domainValidation" class="section full-width hidden">
+        <!-- Safety Confirmation Section -->
+        <section id="safetyConfirmation" class="section full-width warning-section hidden">
             <div class="section-header">
                 <h2 class="section-title">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                     </svg>
-                    Validation Results
+                    ⚠️ DANGER: Account Deletion Confirmation
                 </h2>
-                <p class="section-description">Domain validation summary and details</p>
+                <p class="section-description danger-text">This action will PERMANENTLY DELETE cPanel accounts for the following domains and their data!</p>
             </div>
             
-            <div class="validation-summary">
-                <div class="validation-stat">
-                    <span class="stat-label">Total</span>
-                    <span id="totalDomains" class="stat-value">0</span>
+            <div class="danger-warning">
+                <div class="warning-box">
+                    <div class="warning-header">
+                        <div class="warning-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                        </div>
+                        <div class="warning-content">
+                            <h3>⚠️ PERMANENT DELETION WARNING</h3>
+                            <p>This action will <strong>permanently delete</strong> cPanel accounts and all associated data!</p>
+                        </div>
+                    </div>
+                    
+                    <div class="domains-preview">
+                        <h4>📋 Domains to be deleted:</h4>
+                        <div class="domains-list-container">
+                            <ul id="domainsToDelete" class="domains-list"></ul>
+                        </div>
+                    </div>
+                    
+                    <div class="confirmation-checklist">
+                        <div class="confirmation-items">
+                            <label class="confirmation-item">
+                                <input type="checkbox" id="confirmDeletion">
+                                <span class="checkmark"></span>
+                                <div class="confirmation-text">
+                                    <strong>🚨 I understand this will permanently delete all account data</strong>
+                                    <small>This action cannot be undone. All files, databases, emails, and configurations will be permanently deleted.</small>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
                 </div>
-                <div class="validation-stat">
-                    <span class="stat-label">Valid</span>
-                    <span id="validDomains" class="stat-value text-green">0</span>
-                </div>
-                <div class="validation-stat">
-                    <span class="stat-label">Invalid</span>
-                    <span id="invalidDomains" class="stat-value text-red">0</span>
-                </div>
-                <div class="validation-stat">
-                    <span class="stat-label">Duplicates</span>
-                    <span id="duplicateDomains" class="stat-value text-yellow">0</span>
-                </div>
-            </div>
-            
-            <div id="invalidList" class="validation-list hidden">
-                <h4>Invalid Domains:</h4>
-                <ul id="invalidDomainsUl" class="domain-list"></ul>
-            </div>
-            
-            <div id="duplicateList" class="validation-list hidden">
-                <h4>Duplicate Domains:</h4>
-                <ul id="duplicateDomainsUl" class="domain-list"></ul>
             </div>
         </section>
 
-        <!-- Bulk Creation Section -->
+        <!-- Bulk Deletion Section -->
         <section class="section full-width bulk-creation-section">
             <div class="form-actions">
-                <button id="startCreationBtn" class="btn btn-success btn-lg" disabled>
+                <button id="startDeletionBtn" class="btn btn-danger btn-lg" disabled>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z"/>
+                        <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                     </svg>
-                    Start Bulk Creation
+                    Start Account Deletion
                 </button>
-                <button id="stopCreationBtn" class="btn btn-danger btn-lg" disabled>
+                <button id="stopDeletionBtn" class="btn btn-outline btn-lg" disabled>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M6 6h12v12H6z"/>
                     </svg>
-                    Stop Creation
+                    Stop Process
                 </button>
             </div>
         </section>
@@ -290,9 +227,9 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M13 2.05v3.03c3.39.49 6 3.39 6 6.92 0 .9-.18 1.75-.48 2.54l2.6 1.53c.56-1.24.88-2.62.88-4.07 0-5.18-3.95-9.45-9-9.95zM12 19c-3.87 0-7-3.13-7-7 0-3.53 2.61-6.43 6-6.92V2.05c-5.06.5-9 4.76-9 9.95 0 5.52 4.47 10 9.99 10 3.31 0 6.24-1.61 8.06-4.09l-2.6-1.53C16.17 17.98 14.21 19 12 19z"/>
                     </svg>
-                    Creation Progress
+                    Deletion Progress
                 </h2>
-                <p class="section-description">Monitor the bulk account creation process</p>
+                <p class="section-description">Monitor the account deletion process</p>
             </div>
             
             <div class="progress-container">
@@ -312,7 +249,7 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-value text-green" id="successCount">0</div>
-                    <div class="stat-label">Successful</div>
+                    <div class="stat-label">Deleted</div>
                 </div>
                 <div class="stat-card">
                     <div class="stat-value text-red" id="failedCount">0</div>
@@ -327,7 +264,7 @@
             <!-- Logs Section -->
             <div class="logs-section">
                 <div class="logs-header">
-                    <h3>Process Logs</h3>
+                    <h3>Deletion Logs</h3>
                     <div class="logs-controls">
                         <label class="checkbox-label">
                             <input type="checkbox" id="autoScrollLogs" checked>
@@ -340,29 +277,29 @@
             </div>
         </section>
 
-        <!-- Successful Accounts Section -->
-        <section id="successfulAccountsSection" class="section full-width hidden">
+        <!-- Results Section -->
+        <section id="resultsSection" class="section full-width hidden">
             <div class="section-header">
                 <h2 class="section-title">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    Successful Accounts
+                    Deletion Results
                 </h2>
-                <p class="section-description">Successfully created cPanel accounts with complete login details</p>
+                <p class="section-description">Accounts that were successfully deleted</p>
             </div>
             
             <!-- Summary Card -->
             <div class="accounts-summary">
-                <div class="summary-card">
-                    <div class="summary-icon">✓</div>
+                <div class="summary-card danger">
+                    <div class="summary-icon">🗑️</div>
                     <div class="summary-info">
-                        <div class="summary-count" id="successfulAccountsCount">0</div>
-                        <div class="summary-label">Accounts Created</div>
+                        <div class="summary-count" id="deletedAccountsCount">0</div>
+                        <div class="summary-label">Accounts Deleted</div>
                     </div>
                 </div>
                 <div class="summary-actions">
-                    <button id="exportAccountsBtn" class="btn btn-primary">
+                    <button id="exportResultsBtn" class="btn btn-primary">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
                             <path d="M14 2v6h6"/>
@@ -370,22 +307,12 @@
                             <path d="M16 17H8"/>
                             <path d="M10 9H8"/>
                         </svg>
-                        Export as TXT
-                    </button>
-                    <button id="exportAccountsCsvBtn" class="btn btn-secondary">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
-                            <path d="M14 2v6h6"/>
-                            <path d="M16 13H8"/>
-                            <path d="M16 17H8"/>
-                            <path d="M10 9H8"/>
-                        </svg>
-                        Export as CSV
+                        Export Results
                     </button>
                 </div>
             </div>
             
-            <div id="successfulAccountsList" class="accounts-list"></div>
+            <div id="resultsList" class="accounts-list"></div>
         </section>
     </div>
 
@@ -407,6 +334,6 @@
         </div>
     </footer>
 
-    <script src="app.js"></script>
+    <script src="cpanel-bulk-delete.js"></script>
 </body>
 </html>

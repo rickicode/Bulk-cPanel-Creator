@@ -1,6 +1,7 @@
 const express = require('express');
 const whmRoutes = require('./whm');
 const bulkRoutes = require('./bulk');
+const bulkDeleteRoutes = require('./bulkDelete');
 const processRoutes = require('./process');
 const cloudflareRoutes = require('./cloudflare');
 const wordpressRoutes = require('./wordpress');
@@ -10,6 +11,7 @@ const router = express.Router();
 // API Routes
 router.use('/whm', whmRoutes);
 router.use('/bulk', bulkRoutes);
+router.use('/bulk', bulkDeleteRoutes);
 router.use('/process', processRoutes);
 router.use('/cloudflare', cloudflareRoutes);
 router.use('/wordpress', wordpressRoutes);

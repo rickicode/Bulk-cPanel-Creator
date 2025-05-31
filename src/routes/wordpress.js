@@ -335,7 +335,22 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
         
         addLog(processState, `Found WordPress admin: ${oldWpUser}`, 'info');
         
-        // Step 3: Update WordPress admin password
+        // Step 3: Get WordPress admin email
+        addLog(processState, `Getting WordPress admin email...`, 'info');
+        
+        const wpEmailCmd = `wp user get ${oldWpUser} --field=email --path=/home/${cpanelUser}/public_html --allow-root`;
+        addLog(processState, `Running command: ${wpEmailCmd}`, 'info');
+        const wpEmailResult = await ssh.execCommand(wpEmailCmd);
+        
+        addLog(processState, `Email command result - Code: ${wpEmailResult.code}, Output: ${wpEmailResult.stdout}, Error: ${wpEmailResult.stderr}`, 'info');
+        
+        const wpEmail = wpEmailResult.code === 0 && wpEmailResult.stdout.trim() ?
+                       wpEmailResult.stdout.trim() :
+                       `admin@${domain}`;
+        
+        addLog(processState, `WordPress admin email: ${wpEmail}`, 'info');
+        
+        // Step 4: Update WordPress admin password
         addLog(processState, `Updating password for WordPress admin user: ${oldWpUser}`, 'info');
         
         const updatePasswordCmd = `wp user update ${oldWpUser} --user_pass='${wpConfig.newPassword}' --path=/home/${cpanelUser}/public_html --allow-root`;
@@ -350,12 +365,64 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
         
         addLog(processState, `WordPress admin password updated successfully for user: ${oldWpUser}`, 'success');
         
+        // Step 5: Generate magic login link using WP-CLI
+        addLog(processState, `Generating magic login link for ${oldWpUser}...`, 'info');
+        
+        let magicLink = null;
+        let hasMagicLink = false;
+        
+        try {
+            // Try multiple magic link methods
+            const magicLinkCommands = [
+                // Method 1: Try wp-magic-login plugin
+                `wp user magic-login ${oldWpUser} --path=/home/${cpanelUser}/public_html --allow-root`,
+                // Method 2: Try wp-temporary-login-without-password plugin
+                `wp user temporary-login ${oldWpUser} --path=/home/${cpanelUser}/public_html --allow-root`,
+                // Method 3: Generate autologin URL with wp eval
+                `wp eval "echo add_query_arg(array('autologin' => wp_create_nonce('autologin_' . ${oldWpUser}), 'user_id' => ${oldWpUser}), admin_url());" --path=/home/${cpanelUser}/public_html --allow-root`
+            ];
+            
+            for (const cmd of magicLinkCommands) {
+                addLog(processState, `Trying magic link command...`, 'info');
+                const result = await ssh.execCommand(cmd);
+                
+                if (result.code === 0 && result.stdout.trim() && result.stdout.trim() !== 'wp-admin/') {
+                    magicLink = result.stdout.trim();
+                    
+                    // Ensure the link includes the domain if it's relative
+                    if (magicLink.startsWith('/')) {
+                        magicLink = `https://${domain}${magicLink}`;
+                    } else if (!magicLink.startsWith('http')) {
+                        magicLink = `https://${domain}/wp-admin/${magicLink}`;
+                    }
+                    
+                    hasMagicLink = true;
+                    addLog(processState, `✓ Magic login link generated successfully`, 'success');
+                    break;
+                }
+            }
+            
+            // If no magic link worked, use standard login URL
+            if (!hasMagicLink) {
+                magicLink = `https://${domain}/wp-admin/`;
+                addLog(processState, `Magic link plugins not available, using standard login URL`, 'warning');
+            }
+            
+        } catch (error) {
+            // Fallback: generate standard login URL
+            magicLink = `https://${domain}/wp-admin/`;
+            addLog(processState, `Failed to generate magic link, using standard login URL: ${error.message}`, 'warning');
+        }
+        
         return {
             domain,
             success: true,
             cpanelUser,
             wpUser: oldWpUser,
-            newWpPassword: wpConfig.newPassword
+            wpEmail: wpEmail,
+            newWpPassword: wpConfig.newPassword,
+            loginUrl: magicLink,
+            hasMagicLink: hasMagicLink
         };
         
     } catch (error) {

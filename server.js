@@ -78,6 +78,11 @@ app.get('/wordpress-admin-changer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'wordpress-admin-changer.html'));
 });
 
+// Serve cPanel Bulk Delete page
+app.get('/cpanel-bulk-delete', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cpanel-bulk-delete.html'));
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   const stats = processStateManager.getStats();

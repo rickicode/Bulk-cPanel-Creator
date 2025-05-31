@@ -275,10 +275,15 @@ class BulkCreatorApp {
         const token = this.elements.whmApiToken.value.trim();
         const password = this.elements.whmPassword.value.trim();
 
-        const isValid = host && username && 
+        const isValid = host && username &&
             ((method === 'token' && token) || (method === 'password' && password));
 
         this.elements.testConnectionBtn.disabled = !isValid;
+        
+        // Save WHM connection data whenever valid data is entered
+        if (isValid) {
+            this.saveWhmConnectionData();
+        }
     }
 
     /**
@@ -291,6 +296,11 @@ class BulkCreatorApp {
 
         const isValid = email && apiKey && recordValue;
         this.elements.testCfConnectionBtn.disabled = !isValid;
+        
+        // Save Cloudflare connection data whenever valid data is entered
+        if (isValid) {
+            this.saveCloudflareConnectionData();
+        }
     }
 
     /**
@@ -475,10 +485,19 @@ class BulkCreatorApp {
                     // Load sensitive data
                     if (savedWhmData.apiToken) {
                         this.elements.whmApiToken.value = savedWhmData.apiToken;
+                        console.log('Loaded API token from localStorage');
                     }
                     if (savedWhmData.password) {
                         this.elements.whmPassword.value = savedWhmData.password;
+                        console.log('Loaded password from localStorage');
                     }
+                    
+                    console.log('WHM connection data loaded from localStorage:', {
+                        authMethod: savedWhmData.authMethod,
+                        hasApiToken: !!savedWhmData.apiToken,
+                        hasPassword: !!savedWhmData.password,
+                        host: savedWhmData.host
+                    });
                 }
             }
         } catch (error) {
@@ -564,6 +583,14 @@ class BulkCreatorApp {
         // Simple encoding for localStorage (not real encryption, but better than plain text)
         const encodedData = btoa(JSON.stringify(whmData));
         localStorage.setItem('bulkCreator_whmConnection', encodedData);
+        
+        // Debug log to verify saving
+        console.log('WHM connection data saved to localStorage:', {
+            authMethod: whmData.authMethod,
+            hasApiToken: !!whmData.apiToken,
+            hasPassword: !!whmData.password,
+            host: whmData.host
+        });
     }
 
     /**

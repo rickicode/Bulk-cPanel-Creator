@@ -179,37 +179,22 @@ function validateCloudflareCredentials(credentials) {
 }
 
 /**
- * Sanitize username from domain with random prefix
+ * Generate completely random username (minimum 14 characters)
  */
 function sanitizeUsername(domain) {
-  // Remove TLD and special characters, keep alphanumeric only
-  let domainPart = domain.split('.')[0];
-  domainPart = domainPart.replace(/[^a-z0-9]/gi, '');
-  
-  // Generate random prefix (3 characters mix of letters and numbers)
+  // Use only random alphanumeric characters - no domain parts
   const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let randomPrefix = '';
+  const letterCharset = 'abcdefghijklmnopqrstuvwxyz';
+  
+  let username = '';
   
   // Ensure first character is always a letter (cPanel requirement)
-  const letterCharset = 'abcdefghijklmnopqrstuvwxyz';
-  randomPrefix += letterCharset.charAt(Math.floor(Math.random() * letterCharset.length));
+  username += letterCharset.charAt(Math.floor(Math.random() * letterCharset.length));
   
-  // Add 2 more random characters (letters or numbers)
-  for (let i = 1; i < 3; i++) {
-    randomPrefix += charset.charAt(Math.floor(Math.random() * charset.length));
+  // Generate remaining 13 random characters (letters and numbers)
+  for (let i = 1; i < 14; i++) {
+    username += charset.charAt(Math.floor(Math.random() * charset.length));
   }
-  
-  // Take at least 5 characters from domain, or as much as available
-  let domainSuffix = domainPart.substring(0, Math.max(5, domainPart.length));
-  
-  // If domain part is less than 5 chars, pad with random letters
-  while (domainSuffix.length < 5) {
-    const randomLetter = letterCharset.charAt(Math.floor(Math.random() * letterCharset.length));
-    domainSuffix += randomLetter;
-  }
-  
-  // Combine random prefix + domain suffix (total 8 characters for cPanel limit)
-  const username = (randomPrefix + domainSuffix).substring(0, 8);
   
   return username.toLowerCase();
 }
