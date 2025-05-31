@@ -3,6 +3,7 @@ const whmRoutes = require('./whm');
 const bulkRoutes = require('./bulk');
 const processRoutes = require('./process');
 const cloudflareRoutes = require('./cloudflare');
+const wordpressRoutes = require('./wordpress');
 
 const router = express.Router();
 
@@ -11,6 +12,7 @@ router.use('/whm', whmRoutes);
 router.use('/bulk', bulkRoutes);
 router.use('/process', processRoutes);
 router.use('/cloudflare', cloudflareRoutes);
+router.use('/wordpress', wordpressRoutes);
 
 // API Info endpoint
 router.get('/', (req, res) => {
@@ -27,6 +29,12 @@ router.get('/', (req, res) => {
       cloudflare: {
         'POST /api/cloudflare/validate': 'Validate Cloudflare credentials',
         'POST /api/cloudflare/zones': 'Get zones for a domain'
+      },
+      wordpress: {
+        'POST /api/wordpress/test-ssh': 'Test SSH connection',
+        'POST /api/wordpress/start-changing': 'Start WordPress admin changing process',
+        'GET /api/wordpress/status/:processId': 'Get WordPress changing process status',
+        'POST /api/wordpress/stop/:processId': 'Stop WordPress changing process'
       },
       bulk: {
         'POST /api/bulk/create': 'Start bulk account creation (with optional Cloudflare DNS)',

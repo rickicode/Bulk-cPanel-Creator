@@ -31,7 +31,8 @@
     "helmet": "^7.0.0",
     "winston": "^3.10.0",
     "uuid": "^9.0.0",
-    "csv-writer": "^1.6.0"
+    "csv-writer": "^1.6.0",
+    "node-ssh": "^13.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

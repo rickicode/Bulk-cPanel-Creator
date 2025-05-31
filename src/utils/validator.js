@@ -49,7 +49,7 @@ const accountGenerationSchema = Joi.object({
   whmCredentials: whmCredentialsSchema.required(),
   cloudflareCredentials: cloudflareCredentialsSchema.optional(),
   domains: Joi.array().items(domainSchema).min(1).max(1000).required(),
-  emailTemplate: Joi.string().email().optional(),
+  emailTemplate: Joi.string().pattern(/^[a-zA-Z0-9._%+-]+@(\{domain\}|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})$/).optional(),
   plan: Joi.string().optional(),
   quota: Joi.alternatives().try(
     Joi.number().positive(),
@@ -179,36 +179,37 @@ function validateCloudflareCredentials(credentials) {
 }
 
 /**
- * Sanitize username from domain with random suffix
+ * Sanitize username from domain with random prefix
  */
 function sanitizeUsername(domain) {
   // Remove TLD and special characters, keep alphanumeric only
   let domainPart = domain.split('.')[0];
   domainPart = domainPart.replace(/[^a-z0-9]/gi, '');
   
-  // Take only first 4 characters from domain
-  let prefix = domainPart.substring(0, 4);
-  
-  // Ensure it starts with a letter
-  if (!/^[a-z]/i.test(prefix)) {
-    prefix = 'u' + prefix.substring(1);
-  }
-  
-  // If prefix is less than 4 chars, pad with random letters
-  while (prefix.length < 4) {
-    const randomLetter = String.fromCharCode(97 + Math.floor(Math.random() * 26)); // a-z
-    prefix += randomLetter;
-  }
-  
-  // Generate random suffix (4 characters mix of letters and numbers)
+  // Generate random prefix (3 characters mix of letters and numbers)
   const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let suffix = '';
-  for (let i = 0; i < 4; i++) {
-    suffix += charset.charAt(Math.floor(Math.random() * charset.length));
+  let randomPrefix = '';
+  
+  // Ensure first character is always a letter (cPanel requirement)
+  const letterCharset = 'abcdefghijklmnopqrstuvwxyz';
+  randomPrefix += letterCharset.charAt(Math.floor(Math.random() * letterCharset.length));
+  
+  // Add 2 more random characters (letters or numbers)
+  for (let i = 1; i < 3; i++) {
+    randomPrefix += charset.charAt(Math.floor(Math.random() * charset.length));
   }
   
-  // Combine prefix and suffix (total 8 characters for cPanel limit)
-  const username = (prefix + suffix).substring(0, 8);
+  // Take at least 5 characters from domain, or as much as available
+  let domainSuffix = domainPart.substring(0, Math.max(5, domainPart.length));
+  
+  // If domain part is less than 5 chars, pad with random letters
+  while (domainSuffix.length < 5) {
+    const randomLetter = letterCharset.charAt(Math.floor(Math.random() * letterCharset.length));
+    domainSuffix += randomLetter;
+  }
+  
+  // Combine random prefix + domain suffix (total 8 characters for cPanel limit)
+  const username = (randomPrefix + domainSuffix).substring(0, 8);
   
   return username.toLowerCase();
 }
@@ -241,6 +242,17 @@ function generateSecurePassword(length = 12) {
   return password.split('').sort(() => Math.random() - 0.5).join('');
 }
 
+/**
+ * Generate email from template
+ */
+function generateEmailFromTemplate(emailTemplate, domain) {
+  if (!emailTemplate) {
+    return `admin@${domain}`;
+  }
+  
+  return emailTemplate.replace(/\{domain\}/g, domain);
+}
+
 module.exports = {
   validateEnvVariables,
   validateWhmCredentials,
@@ -250,6 +262,7 @@ module.exports = {
   validateAccountGenerationRequest,
   sanitizeUsername,
   generateSecurePassword,
+  generateEmailFromTemplate,
   schemas: {
     envSchema,
     whmCredentialsSchema,

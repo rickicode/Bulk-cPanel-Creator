@@ -73,6 +73,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Serve WordPress Admin Changer page
+app.get('/wordpress-admin-changer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'wordpress-admin-changer.html'));
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   const stats = processStateManager.getStats();

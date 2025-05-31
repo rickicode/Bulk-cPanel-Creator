@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Admin Changer</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImxpZ2h0bmluZyIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmYmJmMjQ7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6I2Y1OWUwYjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxwYXRoIGQ9Ik0xMyAxMFYzTDQgMTRoN3Y3bDktMTFoLTd6IiBmaWxsPSJ1cmwoI2xpZ2h0bmluZykiIHN0cm9rZT0iI2Q5NzcwNiIgc3Ryb2tlLXdpZHRoPSIwLjUiLz4KPC9zdmc+">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="wp-admin-changer">
+    <div id="particles-js"></div>
+    
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-brand">
+                    <div class="logo">
+                        <svg class="logo-icon" viewBox="0 0 24 24" fill="none">
+                            <defs>
+                                <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#1d4ed8;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="url(#logoGradient)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="header-text">
+                        <h1 class="title">WordPress Admin Changer</h1>
+                        <p class="subtitle">Ganti username dan password admin WordPress secara bulk melalui SSH</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <a href="index.html" class="btn btn-outline">
+                        ← Kembali ke cPanel Creator
+                    </a>
+                    <div class="status-indicator">
+                        <div class="status-dot"></div>
+                        <span class="status-text">Ready</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="form-container">
+                <!-- SSH Configuration -->
+                <section class="config-section">
+                    <h2 class="section-title">Konfigurasi SSH Server</h2>
+                    
+                    <div class="config-group">
+                        <h3 class="group-title">Server SSH Credentials</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="sshHost">SSH Address</label>
+                                <input type="text" id="sshHost" placeholder="server.example.com" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="sshPort">SSH Port</label>
+                                <input type="number" id="sshPort" value="22" min="1" max="65535" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="sshUsername">SSH Username</label>
+                                <input type="text" id="sshUsername" placeholder="root" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="sshPassword">SSH Password</label>
+                                <input type="password" id="sshPassword" placeholder="SSH server password" required>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button id="testSshConnectionBtn" class="btn btn-primary" disabled>
+                                Test SSH Connection
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- WordPress Credentials -->
+                <section class="config-section">
+                    <h2 class="section-title">Password WordPress Baru</h2>
+                    
+                    <div class="config-group">
+                        <h3 class="group-title">Password Baru untuk Admin WordPress</h3>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="newWpPassword">Password WordPress Baru</label>
+                                <input type="password" id="newWpPassword" placeholder="Tomr1dle123@@AAA" required>
+                                <small class="help-text">Password baru yang akan digunakan untuk admin WordPress pada semua domain (username tetap tidak berubah)</small>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-field">
+                                <label for="showPassword">
+                                    <input type="checkbox" id="showPassword" style="margin-right: 8px;">
+                                    Tampilkan password
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Domain List -->
+                <section class="domain-section">
+                    <h2 class="section-title">Daftar Domain</h2>
+                    <div class="domain-input">
+                        <textarea id="domainList" class="domain-textarea" 
+                                  placeholder="example1.com&#10;example2.com&#10;example3.com&#10;Masukkan satu domain per baris..."></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button id="validateDomainsBtn" class="btn btn-secondary" disabled>
+                            Validasi Domain
+                        </button>
+                        <button id="clearDomainsBtn" class="btn btn-outline">
+                            Hapus Daftar
+                        </button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Domain Validation Results Section -->
+        <section id="domainValidation" class="section full-width hidden">
+            <div class="section-header">
+                <h2 class="section-title">Hasil Validasi</h2>
+                <p class="section-description">Ringkasan dan detail validasi domain</p>
+            </div>
+            
+            <div class="validation-summary">
+                <div class="validation-stat">
+                    <span class="stat-label">Total</span>
+                    <span id="totalDomains" class="stat-value">0</span>
+                </div>
+                <div class="validation-stat">
+                    <span class="stat-label">Valid</span>
+                    <span id="validDomains" class="stat-value text-green">0</span>
+                </div>
+                <div class="validation-stat">
+                    <span class="stat-label">Invalid</span>
+                    <span id="invalidDomains" class="stat-value text-red">0</span>
+                </div>
+                <div class="validation-stat">
+                    <span class="stat-label">Duplikat</span>
+                    <span id="duplicateDomains" class="stat-value text-yellow">0</span>
+                </div>
+            </div>
+            
+            <div id="invalidList" class="validation-list hidden">
+                <h4>Domain Invalid:</h4>
+                <ul id="invalidDomainsUl" class="domain-list"></ul>
+            </div>
+            
+            <div id="duplicateList" class="validation-list hidden">
+                <h4>Domain Duplikat:</h4>
+                <ul id="duplicateDomainsUl" class="domain-list"></ul>
+            </div>
+        </section>
+
+        <!-- WordPress Admin Change Section -->
+        <section class="section full-width bulk-creation-section">
+            <div class="form-actions">
+                <button id="startChangingBtn" class="btn btn-success btn-lg" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Mulai Ganti Admin WordPress
+                </button>
+                <button id="stopChangingBtn" class="btn btn-danger btn-lg" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>
+                    Hentikan Proses
+                </button>
+            </div>
+        </section>
+
+        <!-- Progress Monitor Section -->
+        <section id="monitorSection" class="section full-width hidden">
+            <div class="section-header">
+                <h2 class="section-title">Progress Perubahan</h2>
+                <p class="section-description">Monitor proses perubahan admin WordPress</p>
+            </div>
+            
+            <div class="progress-container">
+                <div class="progress-info">
+                    <span id="progressText">Menginisialisasi...</span>
+                    <span id="progressPercentage" class="progress-percentage">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progressFill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="processedCount">0</div>
+                    <div class="stat-label">Diproses</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-green" id="successCount">0</div>
+                    <div class="stat-label">Berhasil</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-red" id="failedCount">0</div>
+                    <div class="stat-label">Gagal</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value text-yellow" id="skippedCount">0</div>
+                    <div class="stat-label">Dilewati</div>
+                </div>
+            </div>
+
+            <!-- Logs Section -->
+            <div class="logs-section">
+                <div class="logs-header">
+                    <h3>Log Proses</h3>
+                    <div class="logs-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoScrollLogs" checked>
+                            Auto-scroll
+                        </label>
+                        <button id="clearLogsBtn" class="btn btn-outline btn-sm">Hapus Log</button>
+                    </div>
+                </div>
+                <div id="logsContent" class="logs-content"></div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="resultsSection" class="section full-width hidden">
+            <div class="section-header">
+                <h2 class="section-title">Hasil Perubahan</h2>
+                <p class="section-description">Domain yang berhasil diubah admin WordPress-nya</p>
+            </div>
+            
+            <!-- Summary Card -->
+            <div class="accounts-summary">
+                <div class="summary-card">
+                    <div class="summary-icon">✓</div>
+                    <div class="summary-info">
+                        <div class="summary-count" id="successfulChangesCount">0</div>
+                        <div class="summary-label">Domain Berhasil</div>
+                    </div>
+                </div>
+                <div class="summary-actions">
+                    <button id="exportResultsBtn" class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M16 13H8"/>
+                            <path d="M16 17H8"/>
+                            <path d="M10 9H8"/>
+                        </svg>
+                        Export Hasil
+                    </button>
+                </div>
+            </div>
+            
+            <div id="resultsList" class="accounts-list"></div>
+        </section>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div id="loadingText" class="loading-text">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <p class="footer-text">Powered by <strong>HIJILABS Studios</strong></p>
+        </div>
+    </footer>
+
+    <script src="wordpress-admin-changer.js"></script>
+</body>
+</html>

@@ -5,7 +5,8 @@ const logger = require('../utils/logger');
 const {
   validateDomains,
   sanitizeUsername,
-  generateSecurePassword
+  generateSecurePassword,
+  generateEmailFromTemplate
 } = require('../utils/validator');
 
 class BulkCreator {
@@ -287,7 +288,7 @@ class BulkCreator {
       // Generate account data
       const username = sanitizeUsername(domain);
       const password = generateSecurePassword();
-      const email = `admin@${domain}`;
+      const email = generateEmailFromTemplate(processData.requestData.emailTemplate, domain);
 
       const accountData = {
         domain,

@@ -88,6 +88,7 @@ class BulkCreatorApp {
             
             // Config
             packagePlan: document.getElementById('packagePlan'),
+            emailTemplate: document.getElementById('emailTemplate'),
             
             // Domains
             domainList: document.getElementById('domainList'),
@@ -161,6 +162,11 @@ class BulkCreatorApp {
             this.elements[field].addEventListener('input', () => {
                 this.validateCredentialFields();
             });
+        });
+
+        // Email template input change
+        this.elements.emailTemplate.addEventListener('input', () => {
+            this.saveFormData();
         });
 
         // Cloudflare form input changes
@@ -520,7 +526,7 @@ class BulkCreatorApp {
         const formData = {};
         
         const fieldsToSave = [
-            // No fields to save anymore - using defaults
+            'emailTemplate'
         ];
 
         fieldsToSave.forEach(field => {
@@ -867,7 +873,8 @@ class BulkCreatorApp {
             const requestData = {
                 whmCredentials: this.getWhmCredentials(),
                 domains: this.validationResults.valid,
-                plan: this.elements.packagePlan.value
+                plan: this.elements.packagePlan.value,
+                emailTemplate: this.elements.emailTemplate.value.trim() || 'admin@{domain}'
             };
 
             // Add Cloudflare credentials if provided

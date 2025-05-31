@@ -33,6 +33,9 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <a href="wordpress-admin-changer" class="btn btn-secondary">
+                        WordPress Admin Changer
+                    </a>
                     <div class="status-indicator">
                         <div class="status-dot"></div>
                         <span class="status-text">Ready</span>
@@ -43,15 +46,21 @@
 
         <!-- Main Content -->
         <div class="main-content">
-            <div class="form-container">
-                <!-- Server Configuration -->
-                <section class="config-section">
-                    <h2 class="section-title">Server Configuration</h2>
-                    
-                    <!-- WHM Credentials -->
+            <!-- Step 1: Server Configuration -->
+            <section class="config-section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span class="step-number">1</span>
+                        Server Configuration
+                    </h2>
+                    <p class="section-description">Configure your WHM server and optional Cloudflare DNS settings</p>
+                </div>
+                
+                <div class="config-container">
+                    <!-- WHM Server Settings -->
                     <div class="config-group">
-                        <h3 class="group-title">WHM Server</h3>
-                        <div class="form-row">
+                        <h3 class="group-title">WHM Server Settings</h3>
+                        <div class="form-grid">
                             <div class="form-field">
                                 <label for="whmHost">Server Host</label>
                                 <input type="text" id="whmHost" placeholder="server.example.com" required>
@@ -65,16 +74,17 @@
                                 <input type="text" id="whmUsername" placeholder="root" required>
                             </div>
                             <div class="form-field">
-                                <label for="whmSsl">SSL</label>
+                                <label for="whmSsl">SSL Enabled</label>
                                 <select id="whmSsl">
                                     <option value="true">Yes</option>
                                     <option value="false">No</option>
                                 </select>
                             </div>
                         </div>
-                        <div class="form-row">
+                        
+                        <div class="form-grid">
                             <div class="form-field">
-                                <label for="authMethod">Authentication</label>
+                                <label for="authMethod">Authentication Method</label>
                                 <select id="authMethod">
                                     <option value="token">API Token</option>
                                     <option value="password">Password</option>
@@ -88,26 +98,45 @@
                                 <label for="whmPassword">Password</label>
                                 <input type="password" id="whmPassword" placeholder="Your WHM password">
                             </div>
-                            <div class="form-field">
-                                <label for="packagePlan">Package</label>
-                                <select id="packagePlan">
-                                    <option value="default">Default</option>
-                                </select>
-                            </div>
                         </div>
+                        
                         <div class="form-actions">
                             <button id="testConnectionBtn" class="btn btn-primary" disabled>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
                                 Test WHM Connection
                             </button>
                         </div>
                     </div>
 
-                    <!-- Cloudflare DNS -->
+                    <!-- Account Settings -->
                     <div class="config-group">
-                        <h3 class="group-title">Cloudflare DNS <span class="optional">(Optional)</span></h3>
-                        <div class="form-row">
+                        <h3 class="group-title">Account Settings</h3>
+                        <div class="form-grid">
                             <div class="form-field">
-                                <label for="cfEmail">Email</label>
+                                <label for="packagePlan">Package Plan</label>
+                                <select id="packagePlan">
+                                    <option value="default">Default</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="emailTemplate">Email Template</label>
+                                <input type="text" id="emailTemplate" placeholder="admin@{domain}" value="admin@{domain}">
+                                <small class="help-text">Use {domain} as placeholder for domain name</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cloudflare DNS (Optional) -->
+                    <div class="config-group">
+                        <h3 class="group-title">
+                            Cloudflare DNS Integration
+                            <span class="optional">(Optional)</span>
+                        </h3>
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label for="cfEmail">Cloudflare Email</label>
                                 <input type="email" id="cfEmail" placeholder="your-email@example.com">
                             </div>
                             <div class="form-field">
@@ -115,7 +144,7 @@
                                 <input type="password" id="cfApiKey" placeholder="Your Cloudflare Global API Key">
                             </div>
                             <div class="form-field">
-                                <label for="cfRecordType">Record Type</label>
+                                <label for="cfRecordType">DNS Record Type</label>
                                 <select id="cfRecordType">
                                     <option value="A">A Record</option>
                                     <option value="CNAME">CNAME Record</option>
@@ -129,29 +158,47 @@
                         </div>
                         <div class="form-actions">
                             <button id="testCfConnectionBtn" class="btn btn-secondary" disabled>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                </svg>
                                 Test Cloudflare Connection
                             </button>
                         </div>
                     </div>
-                </section>
-
-                <!-- Domain List -->
-                <section class="domain-section">
-                    <h2 class="section-title">Domain List</h2>
+                </div>
+            </section>
+            
+            <!-- Step 2: Domain List -->
+            <section class="domain-section">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        <span class="step-number">2</span>
+                        Domain List
+                    </h2>
+                    <p class="section-description">Enter the domains you want to create cPanel accounts for</p>
+                </div>
+                
+                <div class="domain-input-container">
                     <div class="domain-input">
-                        <textarea id="domainList" class="domain-textarea" 
-                                  placeholder="example1.com&#10;example2.com&#10;example3.com&#10;Enter one domain per line..."></textarea>
+                        <textarea id="domainList" class="domain-textarea"
+                                  placeholder="example1.com&#10;example2.com&#10;example3.com&#10;&#10;Enter one domain per line..."></textarea>
                     </div>
-                    <div class="form-actions">
+                    <div class="domain-actions">
                         <button id="validateDomainsBtn" class="btn btn-secondary" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
                             Validate Domains
                         </button>
                         <button id="clearDomainsBtn" class="btn btn-outline">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
                             Clear List
                         </button>
                     </div>
-                </section>
-            </div>
+                </div>
+            </section>
         </div>
 
         <!-- Domain Validation Results Section -->
