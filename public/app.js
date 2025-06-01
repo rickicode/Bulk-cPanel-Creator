@@ -164,8 +164,12 @@ class BulkCreatorApp {
             });
         });
 
-        // Email template input change
+        // Email template and package plan input changes
         this.elements.emailTemplate.addEventListener('input', () => {
+            this.saveFormData();
+        });
+        
+        this.elements.packagePlan.addEventListener('change', () => {
             this.saveFormData();
         });
 
@@ -197,6 +201,7 @@ class BulkCreatorApp {
                 }, 1000); // Wait 1 second after user stops typing
             }
             this.validateDomainFields();
+            this.saveFormData(); // Save domain list
         });
 
         // Button clicks
@@ -545,7 +550,9 @@ class BulkCreatorApp {
         const formData = {};
         
         const fieldsToSave = [
-            'emailTemplate'
+            'emailTemplate',
+            'packagePlan',
+            'domainList'
         ];
 
         fieldsToSave.forEach(field => {

@@ -1,23 +1,19 @@
-// WordPress Admin Changer Application
+/**
+ * WordPress Admin Changer - Frontend Application (REST API Version)
+ * Uses REST API polling instead of websockets, matching index.html functionality
+ */
+
 class WordPressAdminChanger {
     constructor() {
-        this.config = {
-            ssh: {
-                host: '',
-                port: 22,
-                username: '',
-                password: ''
-            },
-            wordpress: {
-                newUsername: '',
-                newPassword: ''
-            }
-        };
-        this.domains = [];
-        this.validDomains = [];
+        this.currentProcessId = null;
         this.isProcessing = false;
-        this.processId = null;
-        this.results = [];
+        this.validationResults = null;
+        this.processResults = null;
+        this.successfulChanges = [];
+        this.pollingInterval = null;
+        this.pollingFrequency = 2000; // 2 seconds
+        this.lastLogCount = 0;
+        this.clearDataTimeout = null; // For debouncing clear data action
         
         this.init();
     }
@@ -29,31 +25,7 @@ class WordPressAdminChanger {
         this.initializeElements();
         this.initializeParticles();
         this.setupEventListeners();
-        this.loadSavedData();
-        this.updateUI();
-    }
-
-    /**
-     * Get DOM elements and store references
-     */
-    initializeElements() {
-        this.elements = {
-            // Toast container
-            toastContainer: document.getElementById('toastContainer'),
-            
-            // Loading overlay
-            loadingOverlay: document.getElementById('loadingOverlay'),
-            loadingText: document.getElementById('loadingText'),
-            
-            // Status indicator
-            statusText: document.querySelector('.status-text'),
-            statusDot: document.querySelector('.status-dot')
-        };
-        
-        // Set initial status
-        if (this.elements.statusText) {
-            this.elements.statusText.textContent = 'Ready';
-        }
+        this.loadFormDefaults();
     }
 
     /**
@@ -78,7 +50,7 @@ class WordPressAdminChanger {
                 position: absolute;
                 width: ${size}px;
                 height: ${size}px;
-                background: #2563eb;
+                background: #3b82f6;
                 border-radius: 50%;
                 left: ${left}%;
                 opacity: ${Math.random() * 0.5 + 0.1};
@@ -90,533 +62,975 @@ class WordPressAdminChanger {
         }
     }
 
+    /**
+     * Get DOM elements and store references
+     */
+    initializeElements() {
+        this.elements = {
+            // SSH Credentials
+            sshHost: document.getElementById('sshHost'),
+            sshPort: document.getElementById('sshPort'),
+            sshUsername: document.getElementById('sshUsername'),
+            sshPassword: document.getElementById('sshPassword'),
+            
+            // WordPress Config
+            newWpPassword: document.getElementById('newWpPassword'),
+            showPassword: document.getElementById('showPassword'),
+            
+            // Domains
+            domainList: document.getElementById('domainList'),
+            
+            // Buttons
+            testSshConnectionBtn: document.getElementById('testSshConnectionBtn'),
+            validateDomainsBtn: document.getElementById('validateDomainsBtn'),
+            clearDomainsBtn: document.getElementById('clearDomainsBtn'),
+            startChangingBtn: document.getElementById('startChangingBtn'),
+            stopChangingBtn: document.getElementById('stopChangingBtn'),
+            clearLogsBtn: document.getElementById('clearLogsBtn'),
+            exportResultsBtn: document.getElementById('exportResultsBtn'),
+            
+            // Domain validation
+            domainValidation: document.getElementById('domainValidation'),
+            totalDomains: document.getElementById('totalDomains'),
+            validDomains: document.getElementById('validDomains'),
+            invalidDomains: document.getElementById('invalidDomains'),
+            duplicateDomains: document.getElementById('duplicateDomains'),
+            invalidList: document.getElementById('invalidList'),
+            invalidDomainsUl: document.getElementById('invalidDomainsUl'),
+            duplicateList: document.getElementById('duplicateList'),
+            duplicateDomainsUl: document.getElementById('duplicateDomainsUl'),
+            
+            // Progress monitoring
+            monitorSection: document.getElementById('monitorSection'),
+            progressText: document.getElementById('progressText'),
+            progressPercentage: document.getElementById('progressPercentage'),
+            progressFill: document.getElementById('progressFill'),
+            processedCount: document.getElementById('processedCount'),
+            successCount: document.getElementById('successCount'),
+            failedCount: document.getElementById('failedCount'),
+            skippedCount: document.getElementById('skippedCount'),
+            
+            // Logs
+            logsContent: document.getElementById('logsContent'),
+            autoScrollLogs: document.getElementById('autoScrollLogs'),
+            
+            // Results
+            resultsSection: document.getElementById('resultsSection'),
+            successfulChangesCount: document.getElementById('successfulChangesCount'),
+            resultsList: document.getElementById('resultsList'),
+            
+            // UI Elements
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            loadingText: document.getElementById('loadingText'),
+            toastContainer: document.getElementById('toastContainer'),
+        };
+    }
+
+    /**
+     * Setup event listeners
+     */
     setupEventListeners() {
-        // SSH Configuration
-        document.getElementById('sshHost').addEventListener('input', () => this.updateConfig());
-        document.getElementById('sshPort').addEventListener('input', () => this.updateConfig());
-        document.getElementById('sshUsername').addEventListener('input', () => this.updateConfig());
-        document.getElementById('sshPassword').addEventListener('input', () => this.updateConfig());
-        
-        // WordPress Configuration
-        document.getElementById('newWpPassword').addEventListener('input', () => this.updateConfig());
-        
-        // Show/Hide Password
-        document.getElementById('showPassword').addEventListener('change', (e) => {
-            const passwordField = document.getElementById('newWpPassword');
-            passwordField.type = e.target.checked ? 'text' : 'password';
+        // SSH credential field changes
+        [this.elements.sshHost, this.elements.sshPort, this.elements.sshUsername, this.elements.sshPassword].forEach(element => {
+            if (element) {
+                element.addEventListener('input', () => {
+                    this.validateSshFields();
+                });
+            }
         });
-        
-        // Domain Management
-        document.getElementById('domainList').addEventListener('input', () => this.updateDomains());
-        document.getElementById('validateDomainsBtn').addEventListener('click', () => this.validateDomains());
-        document.getElementById('clearDomainsBtn').addEventListener('click', () => this.clearDomains());
-        
-        // Test Connections
-        document.getElementById('testSshConnectionBtn').addEventListener('click', () => this.testSshConnection());
-        
-        // Process Control
-        document.getElementById('startChangingBtn').addEventListener('click', () => this.startChanging());
-        document.getElementById('stopChangingBtn').addEventListener('click', () => this.stopChanging());
-        
-        // Logs
-        document.getElementById('clearLogsBtn').addEventListener('click', () => this.clearLogs());
-        
-        // Export
-        document.getElementById('exportResultsBtn').addEventListener('click', () => this.exportResults());
+
+        // WordPress config field changes
+        if (this.elements.newWpPassword) {
+            this.elements.newWpPassword.addEventListener('input', () => {
+                this.validateWordPressFields();
+                this.updateStartButtonState();
+            });
+        }
+
+        // Show/hide password toggle
+        if (this.elements.showPassword) {
+            this.elements.showPassword.addEventListener('change', (e) => {
+                this.elements.newWpPassword.type = e.target.checked ? 'text' : 'password';
+            });
+        }
+
+        // Domain field changes
+        if (this.elements.domainList) {
+            this.elements.domainList.addEventListener('input', () => {
+                this.validateDomainFields();
+            });
+        }
+
+        // Button clicks
+        if (this.elements.testSshConnectionBtn) {
+            this.elements.testSshConnectionBtn.addEventListener('click', () => {
+                this.testSshConnection();
+            });
+        }
+
+        if (this.elements.validateDomainsBtn) {
+            this.elements.validateDomainsBtn.addEventListener('click', () => {
+                this.validateDomains();
+            });
+        }
+
+        if (this.elements.clearDomainsBtn) {
+            this.elements.clearDomainsBtn.addEventListener('click', () => {
+                this.clearDomains();
+            });
+        }
+
+        if (this.elements.startChangingBtn) {
+            this.elements.startChangingBtn.addEventListener('click', () => {
+                this.startWordPressChange();
+            });
+        }
+
+        if (this.elements.stopChangingBtn) {
+            this.elements.stopChangingBtn.addEventListener('click', () => {
+                this.stopWordPressChange();
+            });
+        }
+
+        if (this.elements.clearLogsBtn) {
+            this.elements.clearLogsBtn.addEventListener('click', () => {
+                this.clearLogs();
+            });
+        }
+
+        if (this.elements.exportResultsBtn) {
+            this.elements.exportResultsBtn.addEventListener('click', () => {
+                this.exportResults();
+            });
+        }
+
+        // Auto-scroll logs
+        if (this.elements.autoScrollLogs) {
+            this.elements.autoScrollLogs.addEventListener('change', () => {
+                if (this.elements.autoScrollLogs.checked) {
+                    this.scrollLogsToBottom();
+                }
+            });
+        }
     }
 
-    updateConfig() {
-        this.config.ssh.host = document.getElementById('sshHost').value.trim();
-        this.config.ssh.port = parseInt(document.getElementById('sshPort').value) || 22;
-        this.config.ssh.username = document.getElementById('sshUsername').value.trim();
-        this.config.ssh.password = document.getElementById('sshPassword').value;
+    /**
+     * Load form defaults from localStorage
+     */
+    loadFormDefaults() {
+        try {
+            const saved = localStorage.getItem('wordpressChangerConfig');
+            if (saved) {
+                const config = JSON.parse(saved);
+                
+                // Load SSH settings - INCLUDING PASSWORD
+                if (config.ssh) {
+                    if (this.elements.sshHost) this.elements.sshHost.value = config.ssh.host || '';
+                    if (this.elements.sshPort) this.elements.sshPort.value = config.ssh.port || 22;
+                    if (this.elements.sshUsername) this.elements.sshUsername.value = config.ssh.username || '';
+                    if (this.elements.sshPassword) this.elements.sshPassword.value = config.ssh.password || '';
+                }
+                
+                // Load WordPress settings - INCLUDING PASSWORD
+                if (config.wordpress) {
+                    if (this.elements.newWpPassword) this.elements.newWpPassword.value = config.wordpress.newPassword || '';
+                    if (this.elements.showPassword) this.elements.showPassword.checked = config.wordpress.showPassword || false;
+                    
+                    // Apply show/hide password state
+                    if (this.elements.showPassword.checked) {
+                        this.elements.newWpPassword.type = 'text';
+                    }
+                }
+                
+                // Load domain list
+                if (config.domains && this.elements.domainList) {
+                    this.elements.domainList.value = config.domains.join('\n');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading saved config:', error);
+        }
         
-        this.config.wordpress.newPassword = document.getElementById('newWpPassword').value;
-        
-        this.saveData();
-        this.updateUI();
+        // Validate fields after loading
+        this.validateSshFields();
+        this.validateWordPressFields();
+        this.validateDomainFields();
     }
 
-    updateDomains() {
-        const domainText = document.getElementById('domainList').value;
-        this.domains = domainText.split('\n')
+    /**
+     * Save form data to localStorage - INCLUDING ALL PASSWORDS
+     */
+    saveFormData() {
+        try {
+            const config = {
+                ssh: {
+                    host: this.elements.sshHost?.value || '',
+                    port: parseInt(this.elements.sshPort?.value) || 22,
+                    username: this.elements.sshUsername?.value || '',
+                    password: this.elements.sshPassword?.value || '' // SAVE PASSWORD
+                },
+                wordpress: {
+                    newPassword: this.elements.newWpPassword?.value || '', // SAVE PASSWORD
+                    showPassword: this.elements.showPassword?.checked || false
+                },
+                domains: this.getDomainList()
+            };
+            
+            localStorage.setItem('wordpressChangerConfig', JSON.stringify(config));
+        } catch (error) {
+            console.error('Error saving config:', error);
+        }
+    }
+
+    /**
+     * Validate SSH credential fields and enable/disable test button
+     */
+    validateSshFields() {
+        const host = this.elements.sshHost?.value.trim() || '';
+        const username = this.elements.sshUsername?.value.trim() || '';
+        const password = this.elements.sshPassword?.value || '';
+
+        const isValid = host && username && password;
+        
+        if (this.elements.testSshConnectionBtn) {
+            this.elements.testSshConnectionBtn.disabled = !isValid;
+        }
+        
+        this.updateStartButtonState();
+        this.saveFormData();
+    }
+
+    /**
+     * Validate WordPress credential fields
+     */
+    validateWordPressFields() {
+        const newPassword = this.elements.newWpPassword?.value || '';
+        
+        this.updateStartButtonState();
+        return !!newPassword;
+    }
+
+    /**
+     * Validate domain fields and enable/disable related buttons
+     */
+    validateDomainFields() {
+        const domains = this.elements.domainList?.value.trim() || '';
+        
+        if (this.elements.validateDomainsBtn) {
+            this.elements.validateDomainsBtn.disabled = !domains;
+        }
+        
+        this.updateStartButtonState();
+        this.saveFormData();
+    }
+
+    /**
+     * Update start button state based on all requirements
+     */
+    updateStartButtonState() {
+        const hasSshCredentials = !!(this.elements.sshHost?.value.trim() && 
+                                    this.elements.sshUsername?.value.trim() && 
+                                    this.elements.sshPassword?.value);
+        const hasWpPassword = !!(this.elements.newWpPassword?.value);
+        const hasValidDomains = this.validationResults && this.validationResults.valid.length > 0;
+        
+        if (this.elements.startChangingBtn) {
+            this.elements.startChangingBtn.disabled = !hasSshCredentials || !hasWpPassword || !hasValidDomains || this.isProcessing;
+        }
+    }
+
+    /**
+     * Get domain list from textarea
+     */
+    getDomainList() {
+        const domainText = this.elements.domainList?.value || '';
+        return domainText.split('\n')
             .map(domain => domain.trim())
             .filter(domain => domain.length > 0);
-        
-        this.saveData();
-        this.updateUI();
     }
 
-    updateUI() {
-        const isConfigValid = this.isConfigurationValid();
-        const hasValidDomains = this.validDomains.length > 0;
-        
-        // Enable/disable buttons
-        document.getElementById('testSshConnectionBtn').disabled = !this.config.ssh.host || !this.config.ssh.username;
-        document.getElementById('validateDomainsBtn').disabled = this.domains.length === 0;
-        document.getElementById('startChangingBtn').disabled = !isConfigValid || !hasValidDomains || this.isProcessing;
-        document.getElementById('stopChangingBtn').disabled = !this.isProcessing;
-        
-        // Update status
-        const statusText = document.querySelector('.status-text');
-        const statusDot = document.querySelector('.status-dot');
-        
-        if (this.isProcessing) {
-            statusText.textContent = 'Processing';
-            statusDot.className = 'status-dot status-processing';
-        } else if (isConfigValid && hasValidDomains) {
-            statusText.textContent = 'Ready';
-            statusDot.className = 'status-dot status-success';
-        } else {
-            statusText.textContent = 'Waiting';
-            statusDot.className = 'status-dot';
-        }
+    /**
+     * Get SSH credentials
+     */
+    getSshCredentials() {
+        return {
+            host: this.elements.sshHost?.value.trim() || '',
+            port: parseInt(this.elements.sshPort?.value) || 22,
+            username: this.elements.sshUsername?.value.trim() || '',
+            password: this.elements.sshPassword?.value || ''
+        };
     }
 
-    isConfigurationValid() {
-        return (
-            this.config.ssh.host &&
-            this.config.ssh.username &&
-            this.config.ssh.password &&
-            this.config.wordpress.newPassword
-        );
-    }
-
-    validateDomains() {
-        const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-        const validDomains = [];
-        const invalidDomains = [];
-        const duplicates = [];
-        const seen = new Set();
-        
-        for (const domain of this.domains) {
-            if (!domainRegex.test(domain)) {
-                invalidDomains.push(domain);
-            } else if (seen.has(domain)) {
-                duplicates.push(domain);
-            } else {
-                seen.add(domain);
-                validDomains.push(domain);
-            }
-        }
-        
-        this.validDomains = validDomains;
-        this.displayValidationResults(validDomains, invalidDomains, duplicates);
-        this.updateUI();
-    }
-
-    displayValidationResults(valid, invalid, duplicates) {
-        document.getElementById('totalDomains').textContent = this.domains.length;
-        document.getElementById('validDomains').textContent = valid.length;
-        document.getElementById('invalidDomains').textContent = invalid.length;
-        document.getElementById('duplicateDomains').textContent = duplicates.length;
-        
-        // Show invalid domains
-        const invalidList = document.getElementById('invalidList');
-        const invalidUl = document.getElementById('invalidDomainsUl');
-        if (invalid.length > 0) {
-            invalidUl.innerHTML = invalid.map(domain => `<li>${domain}</li>`).join('');
-            invalidList.classList.remove('hidden');
-        } else {
-            invalidList.classList.add('hidden');
-        }
-        
-        // Show duplicate domains
-        const duplicateList = document.getElementById('duplicateList');
-        const duplicateUl = document.getElementById('duplicateDomainsUl');
-        if (duplicates.length > 0) {
-            duplicateUl.innerHTML = duplicates.map(domain => `<li>${domain}</li>`).join('');
-            duplicateList.classList.remove('hidden');
-        } else {
-            duplicateList.classList.add('hidden');
-        }
-        
-        document.getElementById('domainValidation').classList.remove('hidden');
-        this.showToast(
-            `Validasi selesai: ${valid.length} valid, ${invalid.length} invalid, ${duplicates.length} duplikat`,
-            valid.length === this.domains.length ? 'success' : 'warning'
-        );
-    }
-
-    clearDomains() {
-        document.getElementById('domainList').value = '';
-        this.domains = [];
-        this.validDomains = [];
-        document.getElementById('domainValidation').classList.add('hidden');
-        this.saveData();
-        this.updateUI();
-        this.showToast('Daftar domain telah dihapus', 'info');
-    }
-
+    /**
+     * Test SSH connection
+     */
     async testSshConnection() {
-        if (!this.config.ssh.host || !this.config.ssh.username) {
-            this.showToast('Harap isi host dan username SSH', 'error');
+        const credentials = this.getSshCredentials();
+        
+        if (!credentials.host || !credentials.username || !credentials.password) {
+            this.showToast('error', 'Please fill in all SSH credentials');
             return;
         }
-        
+
         this.showLoading('Testing SSH connection...');
-        
+
         try {
             const response = await fetch('/api/wordpress/test-ssh', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    host: this.config.ssh.host,
-                    port: this.config.ssh.port,
-                    username: this.config.ssh.username,
-                    password: this.config.ssh.password
-                })
+                body: JSON.stringify(credentials)
             });
-            
+
             const result = await response.json();
-            
-            if (response.ok && result.success) {
-                this.showToast('Koneksi SSH berhasil!', 'success');
+
+            if (result.success) {
+                this.showToast('success', 'SSH connection successful!');
+                this.addLog('info', 'SSH connection test passed');
             } else {
-                this.showToast(`Koneksi SSH gagal: ${result.error || 'Unknown error'}`, 'error');
+                this.showToast('error', `SSH connection failed: ${result.error}`);
+                this.addLog('error', `SSH connection failed: ${result.error}`);
             }
+
         } catch (error) {
-            this.showToast(`Error testing SSH: ${error.message}`, 'error');
+            console.error('SSH test error:', error);
+            this.showToast('error', 'Failed to test SSH connection');
+            this.addLog('error', `SSH connection test error: ${error.message}`);
         } finally {
             this.hideLoading();
         }
     }
 
-    async startChanging() {
-        if (!this.isConfigurationValid() || this.validDomains.length === 0) {
-            this.showToast('Konfigurasi tidak lengkap atau tidak ada domain valid', 'error');
+    /**
+     * Validate domains
+     */
+    async validateDomains() {
+        const domains = this.getDomainList();
+        
+        if (domains.length === 0) {
+            this.showToast('error', 'Please enter domains first');
             return;
         }
+
+        this.showLoading('Validating domains...');
+
+        try {
+            const response = await fetch('/api/bulk/validate-domains', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ domains })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.validationResults = result.data;
+                this.displayValidationResults(result.data);
+                this.updateStartButtonState();
+                this.showToast('success', `Validation complete: ${result.data.summary.validCount} valid domains`);
+            } else {
+                this.showToast('error', `Validation failed: ${result.error}`);
+            }
+
+        } catch (error) {
+            console.error('Domain validation error:', error);
+            this.showToast('error', 'Failed to validate domains');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
+     * Display validation results
+     */
+    displayValidationResults(data) {
+        // Show validation section
+        if (this.elements.domainValidation) {
+            this.elements.domainValidation.classList.remove('hidden');
+        }
         
-        this.isProcessing = true;
-        this.results = [];
-        this.updateUI();
+        // Update counts
+        if (this.elements.totalDomains) this.elements.totalDomains.textContent = data.total;
+        if (this.elements.validDomains) this.elements.validDomains.textContent = data.summary.validCount;
+        if (this.elements.invalidDomains) this.elements.invalidDomains.textContent = data.summary.invalidCount;
+        if (this.elements.duplicateDomains) this.elements.duplicateDomains.textContent = data.summary.duplicateCount;
         
-        // Show monitor section
-        document.getElementById('monitorSection').classList.remove('hidden');
-        document.getElementById('resultsSection').classList.add('hidden');
+        // Show/hide invalid domains list
+        if (data.invalid.length > 0 && this.elements.invalidList && this.elements.invalidDomainsUl) {
+            this.elements.invalidList.classList.remove('hidden');
+            this.elements.invalidDomainsUl.innerHTML = '';
+            data.invalid.forEach(domain => {
+                const li = document.createElement('li');
+                li.textContent = domain;
+                this.elements.invalidDomainsUl.appendChild(li);
+            });
+        } else if (this.elements.invalidList) {
+            this.elements.invalidList.classList.add('hidden');
+        }
         
-        // Reset progress
-        this.updateProgress(0, 0, 0, 0, 0, 'Memulai proses...');
-        this.clearLogs();
+        // Show/hide duplicate domains list
+        if (data.duplicates.length > 0 && this.elements.duplicateList && this.elements.duplicateDomainsUl) {
+            this.elements.duplicateList.classList.remove('hidden');
+            this.elements.duplicateDomainsUl.innerHTML = '';
+            data.duplicates.forEach(domain => {
+                const li = document.createElement('li');
+                li.textContent = domain;
+                this.elements.duplicateDomainsUl.appendChild(li);
+            });
+        } else if (this.elements.duplicateList) {
+            this.elements.duplicateList.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Clear domains input and validation
+     */
+    clearDomains() {
+        if (this.elements.domainList) {
+            this.elements.domainList.value = '';
+        }
+        if (this.elements.domainValidation) {
+            this.elements.domainValidation.classList.add('hidden');
+        }
+        
+        this.validationResults = null;
+        this.updateStartButtonState();
+        
+        // Clear previous process data
+        if (this.currentProcessId || this.successfulChanges.length > 0) {
+            this.clearPreviousData();
+            this.showToast('info', 'Domains and previous data cleared');
+        } else {
+            this.showToast('info', 'Domains cleared');
+        }
+        
+        this.saveFormData();
+    }
+
+    /**
+     * Start WordPress admin change process
+     */
+    async startWordPressChange() {
+        if (!this.validationResults || this.validationResults.valid.length === 0) {
+            this.showToast('error', 'Please validate domains first');
+            return;
+        }
+
+        const sshCredentials = this.getSshCredentials();
+        const newPassword = this.elements.newWpPassword?.value || '';
+
+        if (!sshCredentials.host || !sshCredentials.username || !sshCredentials.password) {
+            this.showToast('error', 'Please fill in all SSH credentials');
+            return;
+        }
+
+        if (!newPassword) {
+            this.showToast('error', 'Please enter a new WordPress password');
+            return;
+        }
+
+        // Clear previous data before starting new process
+        this.clearPreviousData();
+
+        this.showLoading('Starting WordPress admin change...');
         
         try {
+            const requestData = {
+                sshCredentials,
+                newPassword,
+                domains: this.validationResults.valid
+            };
+
             const response = await fetch('/api/wordpress/start-changing', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    ssh: this.config.ssh,
-                    wordpress: this.config.wordpress,
-                    domains: this.validDomains
-                })
+                body: JSON.stringify(requestData)
             });
-            
+
             const result = await response.json();
-            
-            if (response.ok && result.success) {
-                this.processId = result.processId;
-                this.showToast('Proses dimulai', 'success');
+
+            if (result.success) {
+                this.currentProcessId = result.processId;
+                this.isProcessing = true;
+                this.lastLogCount = 0;
+                
+                // Show monitoring section
+                if (this.elements.monitorSection) {
+                    this.elements.monitorSection.classList.remove('hidden');
+                }
+                if (this.elements.startChangingBtn) {
+                    this.elements.startChangingBtn.disabled = true;
+                }
+                if (this.elements.stopChangingBtn) {
+                    this.elements.stopChangingBtn.disabled = false;
+                }
+                
+                // Start polling for updates
                 this.startPolling();
+                
+                this.showToast('success', `WordPress change started! Process ID: ${result.processId}`);
+                this.addLog('info', `WordPress change started - Process ID: ${result.processId}`);
+                this.addLog('info', `Total domains to process: ${result.totalDomains}`);
+                
             } else {
-                throw new Error(result.error || 'Failed to start process');
+                this.showToast('error', `Failed to start change: ${result.error}`);
+                this.addLog('error', `WordPress change failed: ${result.error}`);
             }
+
         } catch (error) {
-            this.showToast(`Error memulai proses: ${error.message}`, 'error');
-            this.isProcessing = false;
-            this.updateUI();
+            console.error('WordPress change error:', error);
+            this.showToast('error', 'Failed to start WordPress change');
+            this.addLog('error', `WordPress change error: ${error.message}`);
+        } finally {
+            this.hideLoading();
         }
     }
 
-    async stopChanging() {
-        if (!this.processId) return;
+    /**
+     * Stop WordPress admin change process
+     */
+    async stopWordPressChange() {
+        if (!this.currentProcessId) return;
+
+        this.showLoading('Stopping process...');
         
         try {
-            const response = await fetch(`/api/wordpress/stop/${this.processId}`, {
-                method: 'POST'
+            const response = await fetch(`/api/process/${this.currentProcessId}`, {
+                method: 'DELETE'
             });
-            
+
             const result = await response.json();
-            
-            if (response.ok && result.success) {
-                this.showToast('Proses dihentikan', 'info');
+
+            if (result.success) {
+                this.stopPolling();
+                this.isProcessing = false;
+                if (this.elements.startChangingBtn) {
+                    this.elements.startChangingBtn.disabled = false;
+                }
+                if (this.elements.stopChangingBtn) {
+                    this.elements.stopChangingBtn.disabled = true;
+                }
+                
+                this.showToast('info', 'Process stopped');
+                this.addLog('warn', 'Process stopped by user');
             } else {
-                this.showToast(`Error menghentikan proses: ${result.error}`, 'error');
+                this.showToast('error', `Failed to stop process: ${result.error}`);
             }
+
         } catch (error) {
-            this.showToast(`Error menghentikan proses: ${error.message}`, 'error');
+            console.error('Stop process error:', error);
+            this.showToast('error', 'Failed to stop process');
+        } finally {
+            this.hideLoading();
         }
     }
 
-    async startPolling() {
-        const pollInterval = setInterval(async () => {
-            if (!this.processId || !this.isProcessing) {
-                clearInterval(pollInterval);
-                return;
-            }
-            
+    /**
+     * Start polling for process updates
+     */
+    startPolling() {
+        if (!this.currentProcessId || this.pollingInterval) {
+            return;
+        }
+
+        this.addLog('info', `Starting polling every ${this.pollingFrequency}ms for process updates`);
+
+        this.pollingInterval = setInterval(async () => {
             try {
-                const response = await fetch(`/api/wordpress/status/${this.processId}`);
-                const status = await response.json();
-                
-                if (response.ok && status.success) {
-                    this.handleStatusUpdate(status.data);
-                    
-                    if (status.data.completed || status.data.error) {
-                        clearInterval(pollInterval);
-                        this.handleProcessCompletion(status.data);
-                    }
-                } else {
-                    console.error('Polling error:', status.error);
-                }
+                await this.pollProcessStatus();
+                await this.pollProcessLogs();
             } catch (error) {
                 console.error('Polling error:', error);
             }
-        }, 2000);
+        }, this.pollingFrequency);
     }
 
-    handleStatusUpdate(status) {
-        const { processed, successful, failed, skipped, total, currentDomain, logs } = status;
-        
-        this.updateProgress(processed, successful, failed, skipped, total, 
-            currentDomain ? `Memproses: ${currentDomain}` : 'Memproses...');
-        
-        // Add new logs
-        if (logs && logs.length > 0) {
-            logs.forEach(log => this.addLog(log.message, log.level, log.timestamp));
-        }
-        
-        // Update results
-        if (status.results) {
-            this.results = status.results;
+    /**
+     * Stop polling
+     */
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+            this.addLog('info', 'Stopped polling for process updates');
         }
     }
 
-    handleProcessCompletion(status) {
+    /**
+     * Poll process status
+     */
+    async pollProcessStatus() {
+        if (!this.currentProcessId) return;
+
+        try {
+            const response = await fetch(`/api/process/${this.currentProcessId}/status`);
+            const result = await response.json();
+
+            if (result.success && result.data) {
+                this.handleProcessStatus(result.data);
+            } else if (response.status === 404) {
+                // Process not found, stop polling
+                this.stopPolling();
+                this.addLog('warn', 'Process not found, stopped polling');
+            }
+        } catch (error) {
+            console.error('Failed to poll process status:', error);
+        }
+    }
+
+    /**
+     * Poll process logs
+     */
+    async pollProcessLogs() {
+        if (!this.currentProcessId) return;
+
+        try {
+            const response = await fetch(`/api/process/${this.currentProcessId}/logs?offset=${this.lastLogCount}`);
+            const result = await response.json();
+
+            if (result.success && result.data && result.data.length > 0) {
+                result.data.forEach(log => {
+                    this.addLog(log.level, log.message, new Date(log.timestamp));
+                });
+                this.lastLogCount += result.data.length;
+            }
+        } catch (error) {
+            console.error('Failed to poll process logs:', error);
+        }
+    }
+
+    /**
+     * Handle process status update
+     */
+    handleProcessStatus(data) {
+        this.updateProgress(data);
+
+        if (data.status === 'completed') {
+            this.handleProcessCompleted(data);
+        } else if (data.status === 'failed') {
+            this.handleProcessFailed(data);
+        }
+    }
+
+    /**
+     * Handle process completion
+     */
+    handleProcessCompleted(data) {
+        this.stopPolling();
         this.isProcessing = false;
-        this.processId = null;
-        this.updateUI();
-        
-        if (status.error) {
-            this.showToast(`Proses selesai dengan error: ${status.error}`, 'error');
-        } else {
-            this.showToast(`Proses selesai: ${status.successful} berhasil, ${status.failed} gagal`, 'success');
+
+        if (this.elements.startChangingBtn) {
+            this.elements.startChangingBtn.disabled = false;
         }
-        
-        // Show results
-        this.displayResults();
+        if (this.elements.stopChangingBtn) {
+            this.elements.stopChangingBtn.disabled = true;
+        }
+
+        this.addLog('success', 'WordPress admin change process completed!');
+
+        // Update successful changes
+        if (data.results) {
+            this.successfulChanges = data.results.filter(result => result.success);
+            this.displayResults(data.results);
+        }
+
+        this.showToast('success', 'WordPress change completed!');
+        this.updateStartButtonState();
     }
 
-    updateProgress(processed, successful, failed, skipped, total, message) {
+    /**
+     * Handle process failure
+     */
+    handleProcessFailed(data) {
+        this.stopPolling();
+        this.isProcessing = false;
+
+        if (this.elements.startChangingBtn) {
+            this.elements.startChangingBtn.disabled = false;
+        }
+        if (this.elements.stopChangingBtn) {
+            this.elements.stopChangingBtn.disabled = true;
+        }
+
+        this.addLog('error', `Process failed: ${data.error?.message || 'Unknown error'}`);
+        this.showToast('error', `Process failed: ${data.error?.message || 'Unknown error'}`);
+        this.updateStartButtonState();
+    }
+
+    /**
+     * Update progress display
+     */
+    updateProgress(data) {
+        const stats = data.stats || {};
+        const total = stats.total || 0;
+        const processed = stats.processed || 0;
+        const successful = stats.successful || 0;
+        const failed = stats.failed || 0;
+        const skipped = stats.skipped || 0;
+
         const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
-        
-        document.getElementById('progressText').textContent = message;
-        document.getElementById('progressPercentage').textContent = `${percentage}%`;
-        document.getElementById('progressFill').style.width = `${percentage}%`;
-        
-        document.getElementById('processedCount').textContent = processed;
-        document.getElementById('successCount').textContent = successful;
-        document.getElementById('failedCount').textContent = failed;
-        document.getElementById('skippedCount').textContent = skipped;
+
+        // Update progress bar
+        if (this.elements.progressText) {
+            this.elements.progressText.textContent = data.currentDomain ? 
+                `Processing: ${data.currentDomain}` : 'Processing...';
+        }
+        if (this.elements.progressPercentage) {
+            this.elements.progressPercentage.textContent = `${percentage}%`;
+        }
+        if (this.elements.progressFill) {
+            this.elements.progressFill.style.width = `${percentage}%`;
+        }
+
+        // Update stats
+        if (this.elements.processedCount) this.elements.processedCount.textContent = processed;
+        if (this.elements.successCount) this.elements.successCount.textContent = successful;
+        if (this.elements.failedCount) this.elements.failedCount.textContent = failed;
+        if (this.elements.skippedCount) this.elements.skippedCount.textContent = skipped;
     }
 
-    addLog(message, level = 'info', timestamp = new Date()) {
-        const logsContent = document.getElementById('logsContent');
+    /**
+     * Display results
+     */
+    displayResults(results) {
+        if (!results || results.length === 0) return;
+
+        const successfulResults = results.filter(r => r.success);
+        
+        if (this.elements.successfulChangesCount) {
+            this.elements.successfulChangesCount.textContent = successfulResults.length;
+        }
+
+        if (this.elements.resultsList) {
+            this.elements.resultsList.innerHTML = results.map(result => `
+                <div class="account-card ${result.success ? 'success' : 'failed'}">
+                    <div class="account-header">
+                        <div class="account-domain">${result.domain}</div>
+                        <div class="account-status ${result.success ? 'status-success' : 'status-error'}">
+                            ${result.success ? '✓ Success' : '✗ Failed'}
+                        </div>
+                    </div>
+                    <div class="account-details">
+                        ${result.success ? `
+                            <div class="detail-row">
+                                <span class="detail-label">cPanel User:</span>
+                                <span class="detail-value">${result.cpanelUser || 'N/A'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">WP Admin User:</span>
+                                <span class="detail-value">${result.wpUser || 'N/A'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">WP Admin Email:</span>
+                                <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">New Password:</span>
+                                <span class="detail-value password-field">${result.newPassword || 'N/A'}</span>
+                            </div>
+                            ${result.loginUrl ? `
+                            <div class="detail-row">
+                                <span class="detail-label">Login URL:</span>
+                                <div class="login-link-container">
+                                    <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
+                                        ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
+                                    </a>
+                                    <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
+                                        📋
+                                    </button>
+                                </div>
+                            </div>
+                            ` : ''}
+                        ` : `
+                            <div class="detail-row error">
+                                <span class="detail-label">Error:</span>
+                                <span class="detail-value">${result.error || 'Unknown error'}</span>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Show results section
+        if (this.elements.resultsSection) {
+            this.elements.resultsSection.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Add log entry
+     */
+    addLog(level, message, timestamp = new Date()) {
+        if (!this.elements.logsContent) return;
+
         const logEntry = document.createElement('div');
         logEntry.className = `log-entry log-${level}`;
-        
-        const time = timestamp instanceof Date ? timestamp : new Date(timestamp);
-        const timeStr = time.toLocaleTimeString();
+
+        const timeStr = timestamp.toLocaleTimeString();
         
         logEntry.innerHTML = `
             <span class="log-time">${timeStr}</span>
+            <span class="log-level">[${level.toUpperCase()}]</span>
             <span class="log-message">${message}</span>
         `;
-        
-        logsContent.appendChild(logEntry);
-        
-        // Auto scroll if enabled
-        if (document.getElementById('autoScrollLogs').checked) {
-            logsContent.scrollTop = logsContent.scrollHeight;
+
+        this.elements.logsContent.appendChild(logEntry);
+
+        // Auto-scroll if enabled
+        if (this.elements.autoScrollLogs && this.elements.autoScrollLogs.checked) {
+            this.scrollLogsToBottom();
         }
     }
 
+    /**
+     * Scroll logs to bottom
+     */
+    scrollLogsToBottom() {
+        if (this.elements.logsContent) {
+            this.elements.logsContent.scrollTop = this.elements.logsContent.scrollHeight;
+        }
+    }
+
+    /**
+     * Clear logs
+     */
     clearLogs() {
-        document.getElementById('logsContent').innerHTML = '';
+        if (this.elements.logsContent) {
+            this.elements.logsContent.innerHTML = '';
+        }
+        this.showToast('info', 'Logs cleared');
     }
 
-    displayResults() {
-        if (this.results.length === 0) return;
-        
-        const successfulResults = this.results.filter(r => r.success);
-        
-        document.getElementById('successfulChangesCount').textContent = successfulResults.length;
-        
-        const resultsList = document.getElementById('resultsList');
-        resultsList.innerHTML = this.results.map(result => `
-            <div class="account-card ${result.success ? 'success' : 'failed'}">
-                <div class="account-header">
-                    <div class="account-domain">${result.domain}</div>
-                    <div class="account-status ${result.success ? 'status-success' : 'status-error'}">
-                        ${result.success ? '✓ Success' : '✗ Failed'}
-                    </div>
-                </div>
-                <div class="account-details">
-                    ${result.success ? `
-                        <div class="detail-row">
-                            <span class="detail-label">cPanel User:</span>
-                            <span class="detail-value">${result.cpanelUser || 'N/A'}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">WP Admin User:</span>
-                            <span class="detail-value">${result.wpUser || 'N/A'}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">WP Admin Email:</span>
-                            <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">New Password:</span>
-                            <span class="detail-value password-field">${result.newWpPassword || 'N/A'}</span>
-                        </div>
-                        ${result.loginUrl ? `
-                        <div class="detail-row">
-                            <span class="detail-label">Login URL:</span>
-                            <div class="login-link-container">
-                                <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
-                                    ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
-                                </a>
-                                <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
-                                    📋
-                                </button>
-                            </div>
-                        </div>
-                        ` : ''}
-                    ` : `
-                        <div class="detail-row error">
-                            <span class="detail-label">Error:</span>
-                            <span class="detail-value">${result.error || 'Unknown error'}</span>
-                        </div>
-                    `}
-                </div>
-            </div>
-        `).join('');
-        
-        document.getElementById('resultsSection').classList.remove('hidden');
+    /**
+     * Clear previous process data
+     */
+    clearPreviousData() {
+        // Clear timeout if active
+        if (this.clearDataTimeout) {
+            clearTimeout(this.clearDataTimeout);
+            this.clearDataTimeout = null;
+        }
+
+        // Stop polling
+        this.stopPolling();
+
+        // Reset process state
+        this.currentProcessId = null;
+        this.isProcessing = false;
+        this.lastLogCount = 0;
+        this.successfulChanges = [];
+
+        // Hide UI sections
+        if (this.elements.monitorSection) {
+            this.elements.monitorSection.classList.add('hidden');
+        }
+        if (this.elements.resultsSection) {
+            this.elements.resultsSection.classList.add('hidden');
+        }
+
+        // Reset progress
+        if (this.elements.progressText) this.elements.progressText.textContent = 'Initializing...';
+        if (this.elements.progressPercentage) this.elements.progressPercentage.textContent = '0%';
+        if (this.elements.progressFill) this.elements.progressFill.style.width = '0%';
+
+        // Reset stats
+        if (this.elements.processedCount) this.elements.processedCount.textContent = '0';
+        if (this.elements.successCount) this.elements.successCount.textContent = '0';
+        if (this.elements.failedCount) this.elements.failedCount.textContent = '0';
+        if (this.elements.skippedCount) this.elements.skippedCount.textContent = '0';
+
+        // Clear logs
+        if (this.elements.logsContent) {
+            this.elements.logsContent.innerHTML = '';
+        }
+
+        // Update button states
+        this.updateStartButtonState();
+
+        // Show toast notification
+        this.showToast('info', 'Previous data cleared. Starting fresh...');
     }
 
+    /**
+     * Export results
+     */
     exportResults() {
-        if (this.results.length === 0) {
-            this.showToast('warning', 'No results to export');
+        if (!this.successfulChanges || this.successfulChanges.length === 0) {
+            this.showToast('error', 'No successful changes to export');
             return;
         }
-        
-        const successfulResults = this.results.filter(r => r.success);
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        
-        let content = `WordPress Admin Change Results - ${new Date().toLocaleString()}\n`;
-        content += `===============================================\n\n`;
-        content += `Summary:\n`;
-        content += `- Total domains: ${this.results.length}\n`;
-        content += `- Successful: ${successfulResults.length}\n`;
-        content += `- Failed: ${this.results.length - successfulResults.length}\n\n`;
-        
-        content += `Successful Changes:\n`;
-        content += `==================\n`;
-        successfulResults.forEach(result => {
-            content += `Domain: ${result.domain}\n`;
-            content += `cPanel User: ${result.cpanelUser}\n`;
-            content += `WordPress Admin User: ${result.wpUser}\n`;
-            content += `WordPress Admin Email: ${result.wpEmail || `admin@${result.domain}`}\n`;
-            content += `New Password: ${result.newWpPassword}\n`;
-            if (result.loginUrl) {
-                content += `${result.hasMagicLink ? 'Magic Login Link' : 'Login URL'}: ${result.loginUrl}\n`;
-            }
-            content += `---\n`;
-        });
-        
-        const failedResults = this.results.filter(r => !r.success);
-        if (failedResults.length > 0) {
-            content += `\nFailed Changes:\n`;
-            content += `===============\n`;
-            failedResults.forEach(result => {
-                content += `Domain: ${result.domain}\n`;
-                content += `Error: ${result.error}\n`;
-                content += `---\n`;
-            });
-        }
-        
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `wordpress-admin-changes-${timestamp}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        this.showToast('success', 'Results exported successfully');
-    }
 
-    saveData() {
-        const data = {
-            config: this.config,
-            domains: this.domains,
-            validDomains: this.validDomains
-        };
-        localStorage.setItem('wordpressAdminChangerData', JSON.stringify(data));
-    }
-
-    loadSavedData() {
         try {
-            const saved = localStorage.getItem('wordpressAdminChangerData');
-            if (saved) {
-                const data = JSON.parse(saved);
-                
-                // Load config
-                if (data.config) {
-                    this.config = { ...this.config, ...data.config };
-                    
-                    // Populate form fields
-                    document.getElementById('sshHost').value = this.config.ssh.host || '';
-                    document.getElementById('sshPort').value = this.config.ssh.port || 22;
-                    document.getElementById('sshUsername').value = this.config.ssh.username || '';
-                    document.getElementById('sshPassword').value = this.config.ssh.password || '';
-                    document.getElementById('newWpPassword').value = this.config.wordpress.newPassword || '';
+            let content = 'WordPress Admin Change Results\n';
+            content += '================================\n\n';
+            content += `Export Date: ${new Date().toLocaleString()}\n`;
+            content += `Total Successful Changes: ${this.successfulChanges.length}\n\n`;
+
+            this.successfulChanges.forEach((result, index) => {
+                content += `${index + 1}. Domain: ${result.domain}\n`;
+                content += `   cPanel User: ${result.cpanelUser || 'N/A'}\n`;
+                content += `   WP Admin User: ${result.wpUser || 'N/A'}\n`;
+                content += `   WP Admin Email: ${result.wpEmail || `admin@${result.domain}`}\n`;
+                content += `   New Password: ${result.newPassword || 'N/A'}\n`;
+                if (result.loginUrl) {
+                    content += `   Login URL: ${result.loginUrl}\n`;
                 }
-                
-                // Load domains
-                if (data.domains) {
-                    this.domains = data.domains;
-                    document.getElementById('domainList').value = this.domains.join('\n');
-                }
-                
-                if (data.validDomains) {
-                    this.validDomains = data.validDomains;
-                }
-            }
+                content += '\n';
+            });
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `wordpress-changes-${new Date().toISOString().split('T')[0]}.txt`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+            this.showToast('success', 'Results exported successfully');
         } catch (error) {
-            console.error('Error loading saved data:', error);
+            console.error('Export error:', error);
+            this.showToast('error', 'Failed to export results');
         }
     }
 
+    /**
+     * Show loading overlay
+     */
     showLoading(text = 'Loading...') {
-        this.elements.loadingText.textContent = text;
-        this.elements.loadingOverlay.classList.remove('hidden');
+        if (this.elements.loadingOverlay) {
+            this.elements.loadingOverlay.classList.remove('hidden');
+        }
+        if (this.elements.loadingText) {
+            this.elements.loadingText.textContent = text;
+        }
     }
 
+    /**
+     * Hide loading overlay
+     */
     hideLoading() {
-        this.elements.loadingOverlay.classList.add('hidden');
+        if (this.elements.loadingOverlay) {
+            this.elements.loadingOverlay.classList.add('hidden');
+        }
     }
 
+    /**
+     * Show toast notification
+     */
     showToast(type, message, duration = 5000) {
+        if (!this.elements.toastContainer) return;
+
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        
+
         // Icons for different toast types
         const icons = {
             success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="currentColor">
@@ -632,7 +1046,7 @@ class WordPressAdminChanger {
                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
                    </svg>`
         };
-        
+
         toast.innerHTML = `
             ${icons[type] || icons.info}
             <span class="toast-message">${message}</span>
@@ -656,7 +1070,7 @@ class WordPressAdminChanger {
             }, 300);
         });
 
-        // Auto remove after duration
+        // Auto-remove after duration
         setTimeout(() => {
             if (toast.parentNode) {
                 toast.classList.add('removing');
@@ -670,7 +1084,7 @@ class WordPressAdminChanger {
     }
 }
 
-// Initialize application when DOM is loaded
+// Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new WordPressAdminChanger();
+    window.wordpressChanger = new WordPressAdminChanger();
 });

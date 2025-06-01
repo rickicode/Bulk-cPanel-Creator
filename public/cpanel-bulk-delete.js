@@ -144,7 +144,10 @@ class CpanelBulkDelete {
         this.elements.testWhmBtn.addEventListener('click', () => this.testWhmConnection());
         
         // Domain list
-        this.elements.domainList.addEventListener('input', () => this.validateDomainForm());
+        this.elements.domainList.addEventListener('input', () => {
+            this.validateDomainForm();
+            this.saveDomainList();
+        });
         this.elements.clearDomainsBtn.addEventListener('click', () => this.clearDomainList());
         
         // Safety confirmation
@@ -186,6 +189,17 @@ class CpanelBulkDelete {
             }
         } catch (error) {
             console.error('Error loading saved WHM data:', error);
+        }
+        
+        // Load saved domain list
+        try {
+            const savedDomains = localStorage.getItem('bulkDelete_domainList');
+            if (savedDomains && this.elements.domainList) {
+                this.elements.domainList.value = savedDomains;
+                this.validateDomainForm();
+            }
+        } catch (error) {
+            console.error('Error loading saved domain list:', error);
         }
     }
 
@@ -275,6 +289,18 @@ class CpanelBulkDelete {
     }
 
     /**
+     * Save domain list to localStorage
+     */
+    saveDomainList() {
+        try {
+            const domainList = this.elements.domainList.value;
+            localStorage.setItem('bulkDelete_domainList', domainList);
+        } catch (error) {
+            console.error('Error saving domain list:', error);
+        }
+    }
+
+    /**
      * Get WHM credentials from form
      */
     getWhmCredentials() {
@@ -332,6 +358,10 @@ class CpanelBulkDelete {
         this.elements.domainList.value = '';
         this.elements.safetyConfirmation.classList.add('hidden');
         this.validateDomainForm();
+        
+        // Clear saved domain list from localStorage
+        localStorage.removeItem('bulkDelete_domainList');
+        this.showToast('info', 'Domain list cleared');
     }
 
 
