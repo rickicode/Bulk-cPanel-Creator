@@ -637,8 +637,10 @@ class BulkCreatorApp {
                 this.saveWhmConnectionData();
                 this.saveFormData();
                 
-                // Load available packages
-                this.loadPackages();
+                // Load available packages only if not already connected or packages not loaded
+                if (!this.isWhmConnected || !this.elements.packagePlan || this.elements.packagePlan.options.length <= 1) {
+                    this.loadPackages();
+                }
                 
                 // Mark connection as verified
                 this.isWhmConnected = true;
@@ -739,12 +741,15 @@ class BulkCreatorApp {
     populatePackageSelect(packages) {
         if (!this.elements.packagePlan) return;
         
-        // Clear existing options except default
-        Array.from(this.elements.packagePlan.options).forEach(option => {
-            if (option.value !== 'default') {
-                option.remove();
-            }
-        });
+        // Clear all existing options
+        this.elements.packagePlan.innerHTML = '';
+        
+        // Add default option
+        const defaultOption = document.createElement('option');
+        defaultOption.value = 'default';
+        defaultOption.textContent = 'Select a package plan';
+        defaultOption.disabled = true;
+        this.elements.packagePlan.appendChild(defaultOption);
 
         // Add packages
         packages.forEach((pkg, index) => {
