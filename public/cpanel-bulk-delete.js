@@ -44,6 +44,11 @@ class CpanelBulkDelete {
             passwordField: document.getElementById('passwordField'),
             testWhmBtn: document.getElementById('testWhmBtn'),
             
+            // Cloudflare Configuration (Optional)
+            cfEmail: document.getElementById('cfEmail'),
+            cfApiKey: document.getElementById('cfApiKey'),
+            testCfConnectionBtn: document.getElementById('testCfConnectionBtn'),
+            
             // Domain List
             domainList: document.getElementById('domainList'),
             clearDomainsBtn: document.getElementById('clearDomainsBtn'),
@@ -100,13 +105,21 @@ class CpanelBulkDelete {
         this.elements.authMethod.addEventListener('change', () => this.toggleAuthMethod());
         
         // WHM form changes
-        [this.elements.whmHost, this.elements.whmPort, this.elements.whmUsername, 
+        [this.elements.whmHost, this.elements.whmPort, this.elements.whmUsername,
          this.elements.whmApiToken, this.elements.whmPassword].forEach(element => {
             element.addEventListener('input', () => this.validateWhmForm());
         });
         
         // WHM test connection
         this.elements.testWhmBtn.addEventListener('click', () => this.testWhmConnection());
+        
+        // Cloudflare form changes (optional)
+        [this.elements.cfEmail, this.elements.cfApiKey].forEach(element => {
+            element.addEventListener('input', () => this.validateCloudflareForm());
+        });
+        
+        // Cloudflare test connection
+        this.elements.testCfConnectionBtn.addEventListener('click', () => this.testCloudflareConnection());
         
         // Domain list
         this.elements.domainList.addEventListener('input', () => {
@@ -154,6 +167,21 @@ class CpanelBulkDelete {
             }
         } catch (error) {
             console.error('Error loading saved WHM data:', error);
+        }
+        
+        // Load saved Cloudflare data
+        try {
+            const savedCfData = localStorage.getItem('bulkCreator_cloudflareConnection');
+            if (savedCfData) {
+                const cfData = JSON.parse(atob(savedCfData));
+                
+                this.elements.cfEmail.value = cfData.email || '';
+                this.elements.cfApiKey.value = cfData.apiKey || '';
+                
+                this.validateCloudflareForm();
+            }
+        } catch (error) {
+            console.error('Error loading saved Cloudflare data:', error);
         }
         
         // Load saved domain list
@@ -317,6 +345,94 @@ class CpanelBulkDelete {
     }
 
     /**
+     * Validate Cloudflare form (optional)
+     */
+    validateCloudflareForm() {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+        
+        // Cloudflare is optional, so only validate if both fields have values
+        const hasCredentials = email && apiKey;
+        
+        this.elements.testCfConnectionBtn.disabled = !hasCredentials;
+        
+        // Save Cloudflare data if provided
+        if (hasCredentials) {
+            this.saveCloudflareData();
+        }
+    }
+
+    /**
+     * Save Cloudflare data to localStorage
+     */
+    saveCloudflareData() {
+        try {
+            const cfData = {
+                email: this.elements.cfEmail.value.trim(),
+                apiKey: this.elements.cfApiKey.value.trim()
+            };
+            
+            const encodedData = btoa(JSON.stringify(cfData));
+            localStorage.setItem('bulkCreator_cloudflareConnection', encodedData);
+        } catch (error) {
+            console.error('Error saving Cloudflare data:', error);
+        }
+    }
+
+    /**
+     * Get Cloudflare credentials
+     */
+    getCloudflareCredentials() {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+        
+        if (!email || !apiKey) {
+            return null; // Cloudflare is optional
+        }
+        
+        return {
+            email,
+            apiKey
+        };
+    }
+
+    /**
+     * Test Cloudflare connection (optional)
+     */
+    async testCloudflareConnection() {
+        this.showLoading('Testing Cloudflare connection...');
+        
+        try {
+            const credentials = this.getCloudflareCredentials();
+            if (!credentials) {
+                this.showToast('error', 'Please enter Cloudflare email and API key');
+                return;
+            }
+            
+            const response = await fetch('/api/cloudflare/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ cloudflareCredentials: credentials })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showToast('success', 'Cloudflare connection successful!');
+                this.saveCloudflareData();
+            } else {
+                this.showToast('error', `Cloudflare connection failed: ${result.error}`);
+            }
+        } catch (error) {
+            this.showToast('error', `Cloudflare connection error: ${error.message}`);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    /**
      * Clear domain list
      */
     clearDomainList() {
@@ -372,20 +488,30 @@ class CpanelBulkDelete {
             this.clearPreviousData();
 
             const credentials = this.getWhmCredentials();
+            const cloudflareCredentials = this.getCloudflareCredentials(); // Optional
             const domainsText = this.elements.domainList.value.trim();
             const domains = domainsText.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
+
+            // Prepare request data
+            const requestData = {
+                whm: credentials,
+                domains: domains
+            };
+
+            // Add Cloudflare credentials if provided
+            if (cloudflareCredentials) {
+                requestData.cloudflare = cloudflareCredentials;
+                this.showToast('info', 'DNS cleanup enabled via Cloudflare');
+            }
 
             const response = await fetch('/api/bulk/start-deletion', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    whm: credentials,
-                    domains: domains
-                })
+                body: JSON.stringify(requestData)
             });
 
             const result = await response.json();

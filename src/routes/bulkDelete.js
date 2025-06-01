@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
 const WHMApi = require('../services/whmApi');
+const CloudflareApi = require('../services/cloudflareApi');
 
 const router = express.Router();
 
@@ -12,7 +13,7 @@ const activeProcesses = new Map();
 // Start bulk deletion process
 router.post('/start-deletion', async (req, res) => {
     try {
-        const { whm, domains } = req.body;
+        const { whm, domains, cloudflare } = req.body;
         
         if (!whm || !domains || !Array.isArray(domains)) {
             return res.status(400).json({
@@ -27,7 +28,8 @@ router.post('/start-deletion', async (req, res) => {
         const processInfo = {
             type: 'bulk-deletion',
             domains,
-            whm
+            whm,
+            cloudflare: cloudflare || null // Optional
         };
         
         const processState = req.processStateManager.startProcess(processId, processInfo);
@@ -36,6 +38,8 @@ router.post('/start-deletion', async (req, res) => {
         const deletionProcessState = {
             ...processState,
             domains,
+            whm,
+            cloudflare: cloudflare || null,
             processed: 0,
             successful: 0,
             failed: 0,
@@ -51,7 +55,7 @@ router.post('/start-deletion', async (req, res) => {
         activeProcesses.set(processId, deletionProcessState);
         
         // Start processing in background
-        processBulkDeletion(processId, whm, domains, req.processStateManager);
+        processBulkDeletion(processId, whm, domains, cloudflare, req.processStateManager);
         
         res.json({
             success: true,
@@ -171,12 +175,19 @@ router.get('/results/:processId', (req, res) => {
 });
 
 // Main processing function
-async function processBulkDeletion(processId, whmConfig, domains, processStateManager) {
+async function processBulkDeletion(processId, whmConfig, domains, cloudflareConfig, processStateManager) {
     const processState = activeProcesses.get(processId);
     
     try {
         processState.status = 'processing';
         addLog(processState, 'Starting bulk account deletion process...', 'info');
+        
+        // Initialize Cloudflare API if credentials provided
+        let cloudflareApi = null;
+        if (cloudflareConfig) {
+            cloudflareApi = new CloudflareApi(cloudflareConfig);
+            addLog(processState, '🔗 Cloudflare DNS cleanup enabled', 'info');
+        }
         
         // Process each domain
         for (let i = 0; i < domains.length; i++) {
@@ -191,7 +202,7 @@ async function processBulkDeletion(processId, whmConfig, domains, processStateMa
             addLog(processState, `Processing domain: ${domain}`, 'info');
             
             try {
-                const result = await deleteAccountByDomain(whmConfig, domain, processState);
+                const result = await deleteAccountByDomain(whmConfig, domain, cloudflareApi, processState);
                 processState.results.push(result);
                 
                 if (result.success) {
@@ -244,8 +255,83 @@ async function processBulkDeletion(processId, whmConfig, domains, processStateMa
     }
 }
 
+// Delete DNS records from Cloudflare
+async function deleteDnsRecords(cloudflareApi, domain, processState) {
+    try {
+        addLog(processState, `🔍 Checking DNS records for ${domain}`, 'info');
+        
+        // Get the zone for the domain
+        const zoneResult = await cloudflareApi.getZoneByDomain(domain);
+        if (!zoneResult.success) {
+            addLog(processState, `⚠️ Zone not found for ${domain}: ${zoneResult.error}`, 'warning');
+            return {
+                success: false,
+                error: zoneResult.error
+            };
+        }
+        
+        const zone = zoneResult.data.zone;
+        
+        // Get existing DNS records for this domain
+        const existingRecords = await cloudflareApi.getDnsRecords(zone.id, domain);
+        if (!existingRecords.success) {
+            addLog(processState, `⚠️ Could not check DNS records for ${domain}: ${existingRecords.error}`, 'warning');
+            return {
+                success: false,
+                error: existingRecords.error
+            };
+        }
+        
+        if (existingRecords.data.length === 0) {
+            addLog(processState, `✓ No DNS records found for ${domain}`, 'info');
+            return {
+                success: true,
+                recordsDeleted: 0
+            };
+        }
+        
+        // Delete all DNS records for this domain
+        let deletedCount = 0;
+        let errors = [];
+        
+        addLog(processState, `🗑️ Found ${existingRecords.data.length} DNS record(s) for ${domain}, deleting...`, 'info');
+        
+        for (const record of existingRecords.data) {
+            const deleteResult = await cloudflareApi.deleteDnsRecord(zone.id, record.id);
+            if (deleteResult.success) {
+                deletedCount++;
+                addLog(processState, `🗑️ Deleted ${record.type} record: ${record.name} -> ${record.content} (ID: ${record.id})`, 'info');
+            } else {
+                errors.push(`Failed to delete record ${record.id}: ${deleteResult.error}`);
+                addLog(processState, `❌ Failed to delete ${record.type} record ${record.id}: ${deleteResult.error}`, 'error');
+            }
+        }
+        
+        if (deletedCount > 0) {
+            addLog(processState, `✅ Successfully deleted ${deletedCount} DNS record(s) for ${domain}`, 'success');
+        }
+        
+        if (errors.length > 0) {
+            addLog(processState, `⚠️ Some DNS record deletions failed for ${domain}`, 'warning');
+        }
+        
+        return {
+            success: deletedCount > 0,
+            recordsDeleted: deletedCount,
+            errors: errors.length > 0 ? errors : null
+        };
+        
+    } catch (error) {
+        addLog(processState, `❌ DNS cleanup error for ${domain}: ${error.message}`, 'error');
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
 // Delete account by domain
-async function deleteAccountByDomain(whmConfig, domain, processState) {
+async function deleteAccountByDomain(whmConfig, domain, cloudflareApi, processState) {
     try {
         addLog(processState, `Attempting to find and delete account for domain: ${domain}`, 'info');
         
@@ -276,15 +362,36 @@ async function deleteAccountByDomain(whmConfig, domain, processState) {
         const deleteResult = await whmApiInstance.deleteAccount(account.username);
         
         if (deleteResult.success) {
-            addLog(processState, `Account deleted successfully: ${account.username} (${domain})`, 'success');
+            addLog(processState, `✅ cPanel account deleted successfully: ${account.username} (${domain})`, 'success');
             
-            return {
+            // Attempt DNS cleanup if Cloudflare is configured
+            let dnsCleanupResult = null;
+            if (cloudflareApi) {
+                dnsCleanupResult = await deleteDnsRecords(cloudflareApi, domain, processState);
+            }
+            
+            const result = {
                 domain: domain,
                 username: account.username,
                 email: account.email,
                 success: true,
                 deletionTime: new Date().toISOString()
             };
+            
+            // Add DNS cleanup results if performed
+            if (dnsCleanupResult) {
+                result.dnsCleanup = {
+                    success: dnsCleanupResult.success,
+                    recordsDeleted: dnsCleanupResult.recordsDeleted || 0,
+                    errors: dnsCleanupResult.errors || null
+                };
+                
+                if (dnsCleanupResult.success && dnsCleanupResult.recordsDeleted > 0) {
+                    addLog(processState, `🧹 DNS cleanup completed for ${domain}: ${dnsCleanupResult.recordsDeleted} record(s) removed`, 'success');
+                }
+            }
+            
+            return result;
         } else {
             throw new Error(deleteResult.error || 'Unknown deletion error');
         }

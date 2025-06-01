@@ -30,6 +30,7 @@ router.get('/', (req, res) => {
       },
       cloudflare: {
         'POST /api/cloudflare/validate': 'Validate Cloudflare credentials',
+        'POST /api/cloudflare/test': 'Test Cloudflare connection (alias for validate)',
         'POST /api/cloudflare/zones': 'Get zones for a domain'
       },
       wordpress: {
