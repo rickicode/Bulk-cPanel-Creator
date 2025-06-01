@@ -744,13 +744,6 @@ class BulkCreatorApp {
         // Clear all existing options
         this.elements.packagePlan.innerHTML = '';
         
-        // Add default option
-        const defaultOption = document.createElement('option');
-        defaultOption.value = 'default';
-        defaultOption.textContent = 'Select a package plan';
-        defaultOption.disabled = true;
-        this.elements.packagePlan.appendChild(defaultOption);
-
         // Add packages
         packages.forEach((pkg, index) => {
             const option = document.createElement('option');
@@ -763,6 +756,8 @@ class BulkCreatorApp {
         if (packages.length > 0) {
             this.elements.packagePlan.value = packages[0].name;
             this.addLog('info', `Auto-selected package: ${packages[0].name}`);
+            // Save the form data with the auto-selected package
+            this.saveFormData();
         }
     }
 

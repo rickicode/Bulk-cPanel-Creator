@@ -505,8 +505,10 @@ class WordPressAdminChanger {
         
         try {
             const requestData = {
-                sshCredentials,
-                newPassword,
+                ssh: sshCredentials,
+                wordpress: {
+                    newPassword: newPassword
+                },
                 domains: this.validationResults.valid
             };
 
