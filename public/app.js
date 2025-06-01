@@ -24,45 +24,11 @@ class BulkCreatorApp {
      */
     init() {
         this.initializeElements();
-        this.initializeParticles();
         this.setupEventListeners();
         this.loadFormDefaults();
         // Always connected in REST mode - no need for connection status display
     }
 
-    /**
-     * Initialize particle background with CSS animation
-     */
-    initializeParticles() {
-        const particlesContainer = document.getElementById('particles-js');
-        if (!particlesContainer) return;
-
-        // Create particles using CSS animations
-        for (let i = 0; i < 50; i++) {
-            const particle = document.createElement('div');
-            particle.className = 'particle';
-            
-            // Random positioning and animation properties
-            const size = Math.random() * 4 + 2;
-            const left = Math.random() * 100;
-            const animationDuration = Math.random() * 20 + 10;
-            const animationDelay = Math.random() * 20;
-            
-            particle.style.cssText = `
-                position: absolute;
-                width: ${size}px;
-                height: ${size}px;
-                background: #3b82f6;
-                border-radius: 50%;
-                left: ${left}%;
-                opacity: ${Math.random() * 0.5 + 0.1};
-                animation: float ${animationDuration}s linear infinite;
-                animation-delay: ${animationDelay}s;
-            `;
-            
-            particlesContainer.appendChild(particle);
-        }
-    }
 
     /**
      * Get DOM elements and store references

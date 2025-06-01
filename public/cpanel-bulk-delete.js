@@ -23,7 +23,6 @@ class CpanelBulkDelete {
      */
     init() {
         this.initializeElements();
-        this.initializeParticles();
         this.setupEventListeners();
         this.loadFormDefaults();
     }
@@ -92,40 +91,6 @@ class CpanelBulkDelete {
         }
     }
 
-    /**
-     * Initialize particle background with CSS animation
-     */
-    initializeParticles() {
-        const particlesContainer = document.getElementById('particles-js');
-        if (!particlesContainer) return;
-
-        // Create particles using CSS animations
-        for (let i = 0; i < 50; i++) {
-            const particle = document.createElement('div');
-            particle.className = 'particle';
-            
-            // Random positioning and animation properties
-            const size = Math.random() * 4 + 2;
-            const left = Math.random() * 100;
-            const animationDuration = Math.random() * 20 + 10;
-            const animationDelay = Math.random() * 20;
-            
-            particle.style.cssText = `
-                position: absolute;
-                width: ${size}px;
-                height: ${size}px;
-                background: #dc2626;
-                border-radius: 50%;
-                left: ${left}%;
-                animation: float ${animationDuration}s ease-in-out infinite;
-                animation-delay: ${animationDelay}s;
-                opacity: 0.6;
-                pointer-events: none;
-            `;
-            
-            particlesContainer.appendChild(particle);
-        }
-    }
 
     /**
      * Setup event listeners
