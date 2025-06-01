@@ -258,21 +258,40 @@ class BulkCreator {
         try {
           this.processStateManager.addLog(processId, {
             level: 'info',
-            message: `Creating DNS record for ${domain}`,
+            message: `🔍 Checking DNS records for ${domain}`,
             data: { domain, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
           });
 
           const dnsResult = await cloudflareApi.addOrUpdateDnsRecord(domain);
           if (dnsResult.success) {
+            const action = dnsResult.data.action;
+            const actionEmoji = action === 'replaced' ? '🔄' : '✅';
+            const actionText = action === 'replaced' ? 'replaced existing' : 'created new';
+            
             this.processStateManager.addLog(processId, {
               level: 'info',
-              message: `DNS record created successfully for ${domain}`,
-              data: { domain, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
+              message: `${actionEmoji} DNS record ${actionText} for ${domain} -> ${cloudflareApi.recordValue} (Proxied: Yes)`,
+              data: {
+                domain,
+                action,
+                recordType: cloudflareApi.recordType,
+                recordValue: cloudflareApi.recordValue,
+                proxied: true,
+                recordId: dnsResult.data.record.id
+              }
             });
+            
+            if (action === 'replaced') {
+              this.processStateManager.addLog(processId, {
+                level: 'info',
+                message: `🗑️ Removed duplicate DNS records and added new proxied record for ${domain}`,
+                data: { domain, action: 'duplicate_cleanup' }
+              });
+            }
           } else {
             this.processStateManager.addLog(processId, {
               level: 'warn',
-              message: `Failed to create DNS record for ${domain}: ${dnsResult.error}`,
+              message: `❌ Failed to create DNS record for ${domain}: ${dnsResult.error}`,
               data: { domain, error: dnsResult.error }
             });
           }

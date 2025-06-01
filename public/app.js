@@ -121,13 +121,21 @@ class BulkCreatorApp {
         // Authentication method change
         this.elements.authMethod.addEventListener('change', () => {
             this.toggleAuthMethod();
+            this.saveWhmConnectionData();
         });
 
-        // Form input changes
+        // Form input changes - WHM credentials (save all changes including passwords)
         ['whmHost', 'whmPort', 'whmUsername', 'whmApiToken', 'whmPassword'].forEach(field => {
             this.elements[field].addEventListener('input', () => {
                 this.validateCredentialFields();
+                this.saveWhmConnectionData(); // Save WHM data including passwords
             });
+        });
+
+        // SSL select change
+        this.elements.whmSsl.addEventListener('change', () => {
+            this.validateCredentialFields();
+            this.saveWhmConnectionData(); // Save WHM data
         });
 
         // Email template and package plan input changes
@@ -139,22 +147,19 @@ class BulkCreatorApp {
             this.saveFormData();
         });
 
-        // Cloudflare form input changes
+        // Cloudflare form input changes (save all changes including API keys)
         ['cfEmail', 'cfApiKey', 'cfRecordValue'].forEach(field => {
             this.elements[field].addEventListener('input', () => {
                 this.validateCloudflareFields();
+                this.saveCloudflareConnectionData(); // Save Cloudflare data including API key
             });
-        });
-
-        // SSL select change
-        this.elements.whmSsl.addEventListener('change', () => {
-            this.validateCredentialFields();
         });
 
         // Cloudflare record type change
         this.elements.cfRecordType.addEventListener('change', () => {
             this.toggleCloudflareRecordType();
             this.validateCloudflareFields();
+            this.saveCloudflareConnectionData(); // Save Cloudflare data
         });
 
         this.elements.domainList.addEventListener('input', () => {
@@ -518,7 +523,15 @@ class BulkCreatorApp {
         const fieldsToSave = [
             'emailTemplate',
             'packagePlan',
-            'domainList'
+            'domainList',
+            'whmHost',
+            'whmPort',
+            'whmUsername',
+            'whmSsl',
+            'authMethod',
+            'cfEmail',
+            'cfRecordType',
+            'cfRecordValue'
         ];
 
         fieldsToSave.forEach(field => {
@@ -532,6 +545,10 @@ class BulkCreatorApp {
         });
 
         localStorage.setItem('bulkCreator_formData', JSON.stringify(formData));
+        
+        // Also save sensitive data separately (passwords and API keys)
+        this.saveWhmConnectionData();
+        this.saveCloudflareConnectionData();
     }
 
     /**

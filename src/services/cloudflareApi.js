@@ -249,6 +249,7 @@ class CloudflareApi {
       }
 
       // Check for existing records
+      logger.info(`Checking for existing DNS records for ${recordName}...`);
       const existingRecords = await this.getDnsRecords(zone.id, recordName, this.recordType);
       if (!existingRecords.success) {
         logger.warn(`Could not check existing records for ${recordName}: ${existingRecords.error}`);
@@ -256,16 +257,22 @@ class CloudflareApi {
 
       // Delete existing records if any
       if (existingRecords.success && existingRecords.data.length > 0) {
-        logger.info(`Found ${existingRecords.data.length} existing ${this.recordType} records for ${recordName}, deleting...`);
+        logger.warn(`⚠️  Found ${existingRecords.data.length} existing ${this.recordType} record(s) for ${recordName}:`);
         
         for (const record of existingRecords.data) {
+          logger.info(`   - Record ID: ${record.id}, Content: ${record.content}, Proxied: ${record.proxied ? 'Yes' : 'No'}, TTL: ${record.ttl}`);
+          
           const deleteResult = await this.deleteDnsRecord(zone.id, record.id);
           if (!deleteResult.success) {
-            logger.warn(`Failed to delete existing record ${record.id}: ${deleteResult.error}`);
+            logger.error(`❌ Failed to delete existing record ${record.id}: ${deleteResult.error}`);
           } else {
-            logger.info(`Deleted existing ${this.recordType} record for ${recordName}`);
+            logger.info(`🗑️  Deleted existing ${this.recordType} record: ${recordName} -> ${record.content} (ID: ${record.id})`);
           }
         }
+        
+        logger.info(`✅ Cleared ${existingRecords.data.length} existing record(s) for ${recordName}`);
+      } else {
+        logger.info(`✓ No existing records found for ${recordName}, proceeding with creation`);
       }
 
       // Create the new record
@@ -273,21 +280,24 @@ class CloudflareApi {
         type: this.recordType,
         name: recordName,
         content: this.recordValue,
-        ttl: 300 // 5 minutes
+        ttl: 300, // 5 minutes
+        proxied: true // Default to proxied (orange cloud) instead of direct (gray cloud)
       };
 
+      logger.info(`Creating new ${this.recordType} record: ${recordName} -> ${this.recordValue} (Proxied: Yes, TTL: 300s)`);
       const createResult = await this.createDnsRecord(zone.id, recordData);
       if (createResult.success) {
-        logger.info(`Successfully created ${this.recordType} record for ${recordName} -> ${this.recordValue}`);
+        logger.info(`✅ Successfully created ${this.recordType} record for ${recordName} -> ${this.recordValue} (ID: ${createResult.data.id}, Proxied: ${createResult.data.proxied ? 'Yes' : 'No'})`);
         return {
           success: true,
           data: {
             record: createResult.data,
             zone: zone,
-            action: 'created'
+            action: existingRecords.success && existingRecords.data.length > 0 ? 'replaced' : 'created'
           }
         };
       } else {
+        logger.error(`❌ Failed to create ${this.recordType} record for ${recordName}: ${createResult.error}`);
         return createResult;
       }
 
