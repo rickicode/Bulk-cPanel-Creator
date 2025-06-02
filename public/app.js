@@ -11,6 +11,9 @@ class BulkCreatorApp {
         this.validationResults = null;
         this.processResults = null;
         this.successfulAccounts = [];
+        this.skippedDomains = [];
+        this.failedAccounts = [];
+        this.dnsErrors = [];
         this.pollingInterval = null;
         this.pollingFrequency = 2000; // 2 second
         this.lastLogCount = 0;
@@ -26,6 +29,12 @@ class BulkCreatorApp {
         this.initializeElements();
         this.setupEventListeners();
         this.loadFormDefaults();
+        
+        // Debug: Check if skipped domains elements exist
+        console.log('Skipped domains section element:', this.elements.skippedDomainsSection);
+        console.log('Skipped domains list element:', this.elements.skippedDomainsList);
+        console.log('Skipped domains count element:', this.elements.skippedDomainsCount);
+        
         // Always connected in REST mode - no need for connection status display
     }
 
@@ -84,6 +93,15 @@ class BulkCreatorApp {
             successfulAccountsSection: document.getElementById('successfulAccountsSection'),
             successfulAccountsList: document.getElementById('successfulAccountsList'),
             successfulAccountsCount: document.getElementById('successfulAccountsCount'),
+            skippedDomainsSection: document.getElementById('skippedDomainsSection'),
+            skippedDomainsList: document.getElementById('skippedDomainsList'),
+            skippedDomainsCount: document.getElementById('skippedDomainsCount'),
+            failedAccountsSection: document.getElementById('failedAccountsSection'),
+            failedAccountsList: document.getElementById('failedAccountsList'),
+            failedAccountsCount: document.getElementById('failedAccountsCount'),
+            dnsErrorsSection: document.getElementById('dnsErrorsSection'),
+            dnsErrorsList: document.getElementById('dnsErrorsList'),
+            dnsErrorsCount: document.getElementById('dnsErrorsCount'),
             
             // Logs
             logsContent: document.getElementById('logsContent'),
@@ -212,6 +230,21 @@ class BulkCreatorApp {
         this.elements.exportAccountsCsvBtn.addEventListener('click', () => {
             this.exportAccountsToCsv();
         });
+
+        // Skipped domains event listeners
+        document.getElementById('exportSkippedTxt').addEventListener('click', () => this.exportSkippedToTxt());
+        document.getElementById('exportSkippedCsv').addEventListener('click', () => this.exportSkippedToCsv());
+        document.getElementById('clearSkippedList').addEventListener('click', () => this.clearSkippedDomainsList());
+
+        // Failed accounts event listeners
+        document.getElementById('exportFailedTxt').addEventListener('click', () => this.exportFailedToTxt());
+        document.getElementById('exportFailedCsv').addEventListener('click', () => this.exportFailedToCsv());
+        document.getElementById('clearFailedList').addEventListener('click', () => this.clearFailedAccountsList());
+
+        // DNS errors event listeners
+        document.getElementById('exportDnsErrorsTxt').addEventListener('click', () => this.exportDnsErrorsToTxt());
+        document.getElementById('exportDnsErrorsCsv').addEventListener('click', () => this.exportDnsErrorsToCsv());
+        document.getElementById('clearDnsErrorsList').addEventListener('click', () => this.clearDnsErrorsList());
 
 
         // Auto-scroll logs
@@ -924,7 +957,6 @@ class BulkCreatorApp {
                 // Start polling for updates
                 this.startPolling();
                 
-                this.showToast('success', `Bulk creation started! Process ID: ${result.processId}`);
                 this.addLog('info', `Bulk creation started - Process ID: ${result.processId}`);
                 this.addLog('info', `Total domains to process: ${result.totalDomains}`);
                 
@@ -1027,6 +1059,19 @@ class BulkCreatorApp {
         if (data.level === 'info' && data.message && data.message.includes('Account created successfully')) {
             this.addSuccessfulAccountFromLog(data);
         }
+        
+        // Check for skipped domains (from both warning and info levels)
+        if ((data.level === 'warn' || data.level === 'info') && data.message &&
+            (data.message.includes('Skipping') || data.message.includes('already exists, skipping') ||
+             data.message.includes('already exists') || data.data?.skipped === true)) {
+            console.log('Detected skipped domain from log:', data);
+            this.addSkippedDomainFromLog(data);
+        }
+        
+        // Check for failed account creation
+        if (data.level === 'error' && data.message && data.message.includes('Failed to create account')) {
+            this.addFailedAccountFromLog(data);
+        }
     }
 
     /**
@@ -1044,6 +1089,86 @@ class BulkCreatorApp {
             };
             
             this.addSuccessfulAccount(accountData);
+        }
+    }
+
+    /**
+     * Add skipped domain from log data
+     */
+    addSkippedDomainFromLog(logData) {
+        console.log('addSkippedDomainFromLog called with:', logData);
+        
+        if (logData.data && logData.data.domain) {
+            // Extract reason from message or data
+            let reason = 'Unknown reason';
+            let code = 'UNKNOWN';
+            
+            if (logData.message.includes('already exists')) {
+                reason = 'Domain already exists';
+                code = 'DOMAIN_EXISTS';
+            } else if (logData.message.includes('Cloudflare DNS failed') || logData.message.includes('Skipping') && logData.message.includes('Cloudflare DNS failed')) {
+                reason = logData.data.error || 'Cloudflare DNS failed';
+                code = 'DNS_FAILED';
+            } else if (logData.message.includes('Cloudflare DNS error') || logData.message.includes('Skipping') && logData.message.includes('Cloudflare DNS error')) {
+                reason = logData.data.error || 'Cloudflare DNS error';
+                code = 'DNS_ERROR';
+            } else if (logData.data.error) {
+                reason = logData.data.error;
+                code = logData.data.code || 'UNKNOWN';
+            } else if (logData.message.includes('Skipping')) {
+                // Extract reason from the message
+                const parts = logData.message.split(' - ');
+                if (parts.length > 1) {
+                    reason = parts[1];
+                } else {
+                    reason = 'Domain skipped';
+                }
+                code = 'SKIPPED';
+            }
+            
+            const skippedData = {
+                domain: logData.data.domain,
+                error: reason,
+                code: code,
+                skipped: true
+            };
+            
+            console.log('Adding skipped domain:', skippedData);
+            
+            // Check if this domain is already in the skipped list
+            if (!this.skippedDomains.some(s => s.domain === skippedData.domain)) {
+                this.skippedDomains.push(skippedData);
+                this.addSkippedDomain(skippedData);
+                this.elements.skippedDomainsCount.textContent = this.skippedDomains.length;
+                this.elements.skippedDomainsSection.classList.remove('hidden');
+                console.log('Skipped domain added. Total skipped:', this.skippedDomains.length);
+            } else {
+                console.log('Domain already in skipped list:', skippedData.domain);
+            }
+        } else {
+            console.log('No domain data found in log:', logData);
+        }
+    }
+    
+    /**
+     * Add failed account from log data
+     */
+    addFailedAccountFromLog(logData) {
+        if (logData.data && logData.data.domain) {
+            const failedData = {
+                domain: logData.data.domain,
+                username: logData.data.username || 'N/A',
+                error: logData.data.error || 'Unknown error',
+                code: logData.data.code || 'UNKNOWN'
+            };
+            
+            // Check if this domain is already in the failed list
+            if (!this.failedAccounts.some(f => f.domain === failedData.domain)) {
+                this.failedAccounts.push(failedData);
+                this.addFailedAccount(failedData);
+                this.elements.failedAccountsCount.textContent = this.failedAccounts.length;
+                this.elements.failedAccountsSection.classList.remove('hidden');
+            }
         }
     }
 
@@ -1113,6 +1238,8 @@ class BulkCreatorApp {
         this.elements.startCreationBtn.disabled = false;
         this.elements.stopCreationBtn.disabled = true;
         
+        console.log('Process completed with data:', data);
+        
         this.addLog('info', 'Bulk creation process completed successfully!');
         this.addLog('info', `Total processed: ${data.results?.totalProcessed || 0}`);
         this.addLog('info', `Successful: ${data.results?.successful || 0}`);
@@ -1123,6 +1250,12 @@ class BulkCreatorApp {
         
         // Load final results
         this.loadProcessResults();
+        
+        // Force display of any skipped domains from real-time processing
+        if (this.skippedDomains.length > 0) {
+            console.log('Forcing display of skipped domains:', this.skippedDomains);
+            this.displaySkippedDomains(this.skippedDomains);
+        }
     }
 
     /**
@@ -1205,7 +1338,48 @@ class BulkCreatorApp {
 
             if (result.success && result.data.results) {
                 this.processResults = result.data.results;
-                // Results are now displayed in Successful Accounts section only
+                
+                console.log('Process results:', result.data.results);
+                
+                // Display skipped domains if any
+                if (result.data.results.skipped && result.data.results.skipped.length > 0) {
+                    console.log('Found skipped domains:', result.data.results.skipped);
+                    // Merge with existing skipped domains from real-time logs
+                    result.data.results.skipped.forEach(skipped => {
+                        if (!this.skippedDomains.some(s => s.domain === skipped.domain)) {
+                            this.skippedDomains.push(skipped);
+                        }
+                    });
+                    this.displaySkippedDomains(this.skippedDomains);
+                } else if (this.skippedDomains.length > 0) {
+                    // Show skipped domains from real-time logs even if final results don't have them
+                    console.log('Showing skipped domains from real-time logs:', this.skippedDomains);
+                    this.displaySkippedDomains(this.skippedDomains);
+                }
+
+                // Display failed accounts if any
+                if (result.data.results.failed && result.data.results.failed.length > 0) {
+                    // Merge with existing failed accounts from real-time logs
+                    result.data.results.failed.forEach(failed => {
+                        if (!this.failedAccounts.some(f => f.domain === failed.domain)) {
+                            this.failedAccounts.push(failed);
+                        }
+                    });
+                    this.displayFailedAccounts(this.failedAccounts);
+                } else if (this.failedAccounts.length > 0) {
+                    // Show failed accounts from real-time logs
+                    this.displayFailedAccounts(this.failedAccounts);
+                }
+
+                // Check for DNS errors in successful accounts
+                if (result.data.results.successful && result.data.results.successful.length > 0) {
+                    const dnsErrors = result.data.results.successful.filter(account =>
+                        account.dnsError || (account.cloudflare && !account.cloudflare.success)
+                    );
+                    if (dnsErrors.length > 0) {
+                        this.displayDnsErrors(dnsErrors);
+                    }
+                }
             }
         } catch (error) {
             console.error('Failed to load process results:', error);
@@ -1227,6 +1401,15 @@ class BulkCreatorApp {
     clearPreviousData() {
         // Clear successful accounts
         this.clearSuccessfulAccountsList();
+        
+        // Clear skipped domains
+        this.clearSkippedDomainsList();
+        
+        // Clear failed accounts
+        this.clearFailedAccountsList();
+        
+        // Clear DNS errors
+        this.clearDnsErrorsList();
         
         // Hide successful accounts section
         this.elements.successfulAccountsSection.classList.add('hidden');
@@ -1466,6 +1649,449 @@ class BulkCreatorApp {
                 }, 300);
             }
         }, duration);
+    }
+
+    /**
+     * Display skipped domains
+     */
+    displaySkippedDomains(skippedData) {
+        console.log('displaySkippedDomains called with:', skippedData);
+        console.log('Skipped domains section element:', this.elements.skippedDomainsSection);
+        console.log('Skipped domains list element:', this.elements.skippedDomainsList);
+        
+        this.skippedDomains = skippedData;
+        this.elements.skippedDomainsCount.textContent = skippedData.length;
+
+        this.elements.skippedDomainsList.innerHTML = '';
+        
+        skippedData.forEach(skipped => {
+            console.log('Adding skipped domain to display:', skipped);
+            this.addSkippedDomain(skipped);
+        });
+
+        this.elements.skippedDomainsSection.classList.remove('hidden');
+        console.log('Skipped domains section visibility classes:', this.elements.skippedDomainsSection.className);
+        console.log('Skipped domains section should now be visible, count:', skippedData.length);
+    }
+
+    /**
+     * Add a skipped domain to the list
+     */
+    addSkippedDomain(skippedData) {
+        const domainDiv = document.createElement('div');
+        domainDiv.className = 'account-card skipped';
+        
+        // Choose appropriate icon and message based on the skip reason
+        let statusIcon = '⚠️';
+        let statusText = 'Skipped';
+        let reasonColor = '';
+        
+        if (skippedData.code === 'DNS_FAILED' || skippedData.code === 'DNS_ERROR') {
+            statusIcon = '☁️';
+            statusText = 'DNS Failed';
+            reasonColor = 'style="color: #f59e0b;"'; // Orange color for DNS issues
+        } else if (skippedData.code === 'DOMAIN_EXISTS') {
+            statusIcon = '🔄';
+            statusText = 'Already Exists';
+            reasonColor = 'style="color: #6b7280;"'; // Gray color for existing domains
+        }
+        
+        domainDiv.innerHTML = `
+            <div class="account-header">
+                <div class="account-domain">${skippedData.domain}</div>
+                <div class="account-status status-skipped">${statusIcon} ${statusText}</div>
+            </div>
+            <div class="account-details">
+                <div class="detail-row">
+                    <span class="detail-label">Reason:</span>
+                    <span class="detail-value" ${reasonColor}>${skippedData.error || skippedData.reason || 'Domain already exists'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Code:</span>
+                    <span class="detail-value">${skippedData.code || 'DOMAIN_EXISTS'}</span>
+                </div>
+                ${skippedData.code === 'DNS_FAILED' || skippedData.code === 'DNS_ERROR' ? `
+                <div class="detail-row">
+                    <span class="detail-label">Note:</span>
+                    <span class="detail-value" style="color: #f59e0b; font-style: italic;">
+                        cPanel account creation was skipped due to DNS configuration failure.
+                        Please check your Cloudflare settings and domain configuration.
+                    </span>
+                </div>
+                ` : ''}
+            </div>
+        `;
+
+        this.elements.skippedDomainsList.appendChild(domainDiv);
+    }
+
+    /**
+     * Clear skipped domains list
+     */
+    clearSkippedDomainsList() {
+        this.elements.skippedDomainsList.innerHTML = '';
+        this.skippedDomains = [];
+        this.elements.skippedDomainsCount.textContent = '0';
+        this.elements.skippedDomainsSection.classList.add('hidden');
+        this.showToast('info', 'Skipped domains list cleared');
+    }
+
+    /**
+     * Export skipped domains to TXT
+     */
+    exportSkippedToTxt() {
+        if (!this.skippedDomains || this.skippedDomains.length === 0) {
+            this.showToast('error', 'No skipped domains to export');
+            return;
+        }
+
+        let txtContent = `Skipped Domains Report\n`;
+        txtContent += `Generated: ${new Date().toLocaleString()}\n`;
+        txtContent += `Total Skipped: ${this.skippedDomains.length}\n\n`;
+        txtContent += '================================================\n\n';
+
+        this.skippedDomains.forEach((skipped, index) => {
+            if (index > 0) txtContent += '\n';
+            txtContent += `${index + 1}. Domain: ${skipped.domain}\n`;
+            txtContent += `   Reason: ${skipped.error || skipped.reason || 'Domain already exists'}\n`;
+            txtContent += `   Code: ${skipped.code || 'DOMAIN_EXISTS'}\n`;
+            
+            // Add specific note for DNS-related issues
+            if (skipped.code === 'DNS_FAILED' || skipped.code === 'DNS_ERROR') {
+                txtContent += `   Note: cPanel account creation was skipped due to DNS configuration failure.\n`;
+                txtContent += `         Please check your Cloudflare settings and domain configuration.\n`;
+            } else if (skipped.code === 'DOMAIN_NOT_IN_CLOUDFLARE') {
+                txtContent += `   Note: Domain not found in your Cloudflare account.\n`;
+                txtContent += `         Add the domain to Cloudflare or disable DNS integration.\n`;
+            }
+            
+            txtContent += '   ' + '-'.repeat(45) + '\n';
+        });
+
+        const blob = new Blob([txtContent], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `skipped-domains-${new Date().toISOString().split('T')[0]}.txt`;
+        link.click();
+        
+        this.showToast('success', 'Skipped domains exported to TXT');
+    }
+
+    /**
+     * Export skipped domains to CSV
+     */
+    exportSkippedToCsv() {
+        if (!this.skippedDomains || this.skippedDomains.length === 0) {
+            this.showToast('error', 'No skipped domains to export');
+            return;
+        }
+
+        const headers = ['Domain', 'Reason', 'Code', 'Category', 'Note'];
+        const rows = [headers];
+
+        this.skippedDomains.forEach(skipped => {
+            let category = 'General';
+            let note = '';
+            
+            if (skipped.code === 'DNS_FAILED' || skipped.code === 'DNS_ERROR') {
+                category = 'DNS Issue';
+                note = 'Check Cloudflare settings and domain configuration';
+            } else if (skipped.code === 'DOMAIN_NOT_IN_CLOUDFLARE') {
+                category = 'Domain Not Found';
+                note = 'Add domain to Cloudflare or disable DNS integration';
+            } else if (skipped.code === 'DOMAIN_EXISTS') {
+                category = 'Already Exists';
+                note = 'Domain already has a cPanel account';
+            }
+            
+            rows.push([
+                skipped.domain,
+                skipped.error || skipped.reason || 'Domain already exists',
+                skipped.code || 'DOMAIN_EXISTS',
+                category,
+                note
+            ]);
+        });
+
+        const csvContent = rows.map(row =>
+            row.map(field => `"${field.toString().replace(/"/g, '""')}"`).join(',')
+        ).join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `skipped-domains-${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        
+        this.showToast('success', 'Skipped domains exported to CSV');
+    }
+
+    /**
+     * Display failed accounts
+     */
+    displayFailedAccounts(failedData) {
+        this.failedAccounts = failedData;
+        this.elements.failedAccountsCount.textContent = failedData.length;
+
+        this.elements.failedAccountsList.innerHTML = '';
+        
+        failedData.forEach(failed => {
+            this.addFailedAccount(failed);
+        });
+
+        this.elements.failedAccountsSection.classList.remove('hidden');
+    }
+
+    /**
+     * Add a failed account to the list
+     */
+    addFailedAccount(failedData) {
+        const accountDiv = document.createElement('div');
+        accountDiv.className = 'account-card failed';
+        
+        accountDiv.innerHTML = `
+            <div class="account-header">
+                <div class="account-domain">${failedData.domain}</div>
+                <div class="account-status status-error">✗ Failed</div>
+            </div>
+            <div class="account-details">
+                <div class="detail-row">
+                    <span class="detail-label">Error:</span>
+                    <span class="detail-value">${failedData.error || 'Unknown error'}</span>
+                </div>
+                ${failedData.code ? `
+                <div class="detail-row">
+                    <span class="detail-label">Code:</span>
+                    <span class="detail-value">${failedData.code}</span>
+                </div>
+                ` : ''}
+                ${failedData.details ? `
+                <div class="detail-row">
+                    <span class="detail-label">Details:</span>
+                    <span class="detail-value">${failedData.details}</span>
+                </div>
+                ` : ''}
+            </div>
+        `;
+
+        this.elements.failedAccountsList.appendChild(accountDiv);
+    }
+
+    /**
+     * Clear failed accounts list
+     */
+    clearFailedAccountsList() {
+        this.elements.failedAccountsList.innerHTML = '';
+        this.failedAccounts = [];
+        this.elements.failedAccountsCount.textContent = '0';
+        this.elements.failedAccountsSection.classList.add('hidden');
+        this.showToast('info', 'Failed accounts list cleared');
+    }
+
+    /**
+     * Export failed accounts to TXT
+     */
+    exportFailedToTxt() {
+        if (!this.failedAccounts || this.failedAccounts.length === 0) {
+            this.showToast('error', 'No failed accounts to export');
+            return;
+        }
+
+        let txtContent = '';
+        this.failedAccounts.forEach((failed, index) => {
+            if (index > 0) txtContent += '\n';
+            txtContent += `Domain: ${failed.domain}\n`;
+            txtContent += `Error: ${failed.error || 'Unknown error'}\n`;
+            if (failed.code) txtContent += `Code: ${failed.code}\n`;
+            if (failed.details) txtContent += `Details: ${failed.details}\n`;
+            txtContent += '-----------------------------------';
+        });
+
+        const blob = new Blob([txtContent], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `failed-accounts-${new Date().toISOString().split('T')[0]}.txt`;
+        link.click();
+        
+        this.showToast('success', 'Failed accounts exported to TXT');
+    }
+
+    /**
+     * Export failed accounts to CSV
+     */
+    exportFailedToCsv() {
+        if (!this.failedAccounts || this.failedAccounts.length === 0) {
+            this.showToast('error', 'No failed accounts to export');
+            return;
+        }
+
+        const headers = ['Domain', 'Error', 'Code', 'Details'];
+        const rows = [headers];
+
+        this.failedAccounts.forEach(failed => {
+            rows.push([
+                failed.domain,
+                failed.error || 'Unknown error',
+                failed.code || '',
+                failed.details || ''
+            ]);
+        });
+
+        const csvContent = rows.map(row =>
+            row.map(field => `"${field}"`).join(',')
+        ).join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `failed-accounts-${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        
+        this.showToast('success', 'Failed accounts exported to CSV');
+    }
+
+    /**
+     * Display DNS errors
+     */
+    displayDnsErrors(dnsErrorData) {
+        this.dnsErrors = dnsErrorData;
+        this.elements.dnsErrorsCount.textContent = dnsErrorData.length;
+
+        this.elements.dnsErrorsList.innerHTML = '';
+        
+        dnsErrorData.forEach(dnsError => {
+            this.addDnsError(dnsError);
+        });
+
+        this.elements.dnsErrorsSection.classList.remove('hidden');
+    }
+
+    /**
+     * Add a DNS error to the list
+     */
+    addDnsError(dnsErrorData) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'account-card dns-error';
+        
+        const dnsError = dnsErrorData.dnsError || dnsErrorData.cloudflare?.error || 'DNS record creation failed';
+        
+        errorDiv.innerHTML = `
+            <div class="account-header">
+                <div class="account-domain">${dnsErrorData.domain}</div>
+                <div class="account-status status-warning">⚠️ DNS Error</div>
+            </div>
+            <div class="account-details">
+                <div class="detail-row">
+                    <span class="detail-label">Account Status:</span>
+                    <span class="detail-value">✓ Created Successfully</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">DNS Error:</span>
+                    <span class="detail-value">${dnsError}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Username:</span>
+                    <span class="detail-value">${dnsErrorData.username}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Password:</span>
+                    <span class="detail-value password-field">${dnsErrorData.password}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">cPanel Login:</span>
+                    <span class="detail-value">
+                        <a href="https://${dnsErrorData.domain}:2083" target="_blank" class="login-link">
+                            https://${dnsErrorData.domain}:2083
+                        </a>
+                    </span>
+                </div>
+            </div>
+        `;
+
+        this.elements.dnsErrorsList.appendChild(errorDiv);
+    }
+
+    /**
+     * Clear DNS errors list
+     */
+    clearDnsErrorsList() {
+        this.elements.dnsErrorsList.innerHTML = '';
+        this.dnsErrors = [];
+        this.elements.dnsErrorsCount.textContent = '0';
+        this.elements.dnsErrorsSection.classList.add('hidden');
+        this.showToast('info', 'DNS errors list cleared');
+    }
+
+    /**
+     * Export DNS errors to TXT
+     */
+    exportDnsErrorsToTxt() {
+        if (!this.dnsErrors || this.dnsErrors.length === 0) {
+            this.showToast('error', 'No DNS errors to export');
+            return;
+        }
+
+        let txtContent = '';
+        this.dnsErrors.forEach((dnsError, index) => {
+            if (index > 0) txtContent += '\n';
+            txtContent += `Domain: ${dnsError.domain}\n`;
+            txtContent += `Account Status: Created Successfully\n`;
+            txtContent += `DNS Error: ${dnsError.dnsError || dnsError.cloudflare?.error || 'DNS record creation failed'}\n`;
+            txtContent += `Username: ${dnsError.username}\n`;
+            txtContent += `Password: ${dnsError.password}\n`;
+            txtContent += `cPanel Login: https://${dnsError.domain}:2083\n`;
+            txtContent += '-----------------------------------';
+        });
+
+        const blob = new Blob([txtContent], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `dns-errors-${new Date().toISOString().split('T')[0]}.txt`;
+        link.click();
+        
+        this.showToast('success', 'DNS errors exported to TXT');
+    }
+
+    /**
+     * Export DNS errors to CSV
+     */
+    exportDnsErrorsToCsv() {
+        if (!this.dnsErrors || this.dnsErrors.length === 0) {
+            this.showToast('error', 'No DNS errors to export');
+            return;
+        }
+
+        const headers = ['Domain', 'Account Status', 'DNS Error', 'Username', 'Password', 'cPanel Login'];
+        const rows = [headers];
+
+        this.dnsErrors.forEach(dnsError => {
+            rows.push([
+                dnsError.domain,
+                'Created Successfully',
+                dnsError.dnsError || dnsError.cloudflare?.error || 'DNS record creation failed',
+                dnsError.username,
+                dnsError.password,
+                `https://${dnsError.domain}:2083`
+            ]);
+        });
+
+        const csvContent = rows.map(row =>
+            row.map(field => `"${field}"`).join(',')
+        ).join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `dns-errors-${new Date().toISOString().split('T')[0]}.csv`;
+        link.click();
+        
+        this.showToast('success', 'DNS errors exported to CSV');
     }
 }
 

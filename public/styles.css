@@ -1160,6 +1160,36 @@ body {
     background: linear-gradient(135deg, var(--danger-color), var(--danger-hover));
 }
 
+.account-card.skipped .account-header {
+    background: linear-gradient(135deg, var(--warning-color), #f59e0b);
+}
+
+.account-card.skipped {
+    border-left: 4px solid var(--warning-color);
+    background-color: var(--surface);
+}
+
+.status-skipped {
+    background: var(--warning-light);
+    color: var(--warning-color);
+    border-color: var(--warning-color);
+}
+
+.account-card.dns-error .account-header {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.account-card.dns-error {
+    border-left: 4px solid #f59e0b;
+    background-color: var(--surface);
+}
+
+.status-warning {
+    background: var(--warning-light);
+    color: var(--warning-color);
+    border-color: var(--warning-color);
+}
+
 .account-domain {
     margin: 0;
     font-size: var(--font-lg);

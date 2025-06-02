@@ -114,16 +114,46 @@ class CloudflareApi {
           }
         };
       } else {
+        // Check if we have access to any zones at all to provide better error message
+        const allZonesResponse = await axios.get(`${this.baseURL}/zones`, {
+          headers: this.headers,
+          params: { per_page: 5 }, // Just get a few to check access
+          timeout: 30000
+        });
+
+        let errorMessage = `Domain '${mainDomain}' not found in Cloudflare account`;
+        
+        if (allZonesResponse.data.success && allZonesResponse.data.result.length > 0) {
+          const availableDomains = allZonesResponse.data.result.map(zone => zone.name).slice(0, 3);
+          errorMessage += `. Available domains: ${availableDomains.join(', ')}${allZonesResponse.data.result.length > 3 ? '...' : ''}`;
+        } else {
+          errorMessage += '. No domains found in this Cloudflare account or insufficient permissions.';
+        }
+
         return {
           success: false,
-          error: `Zone not found for domain: ${mainDomain}`
+          error: errorMessage,
+          code: 'DOMAIN_NOT_IN_CLOUDFLARE'
         };
       }
     } catch (error) {
       logger.error('Failed to get zone:', error.message);
+      
+      let errorMessage = 'Failed to connect to Cloudflare';
+      if (error.response) {
+        if (error.response.status === 403) {
+          errorMessage = 'Cloudflare API access denied. Check your API key permissions.';
+        } else if (error.response.status === 401) {
+          errorMessage = 'Cloudflare API authentication failed. Check your email and API key.';
+        } else {
+          errorMessage = `Cloudflare API error: ${error.response.status} ${error.response.statusText}`;
+        }
+      }
+      
       return {
         success: false,
-        error: error.message || 'Failed to get zone'
+        error: errorMessage,
+        code: 'CLOUDFLARE_API_ERROR'
       };
     }
   }
@@ -235,7 +265,12 @@ class CloudflareApi {
       // Get the zone for the main domain
       const zoneResult = await this.getZoneByDomain(domain);
       if (!zoneResult.success) {
-        return zoneResult;
+        // Return more specific error for domain not found in Cloudflare
+        return {
+          success: false,
+          error: zoneResult.error,
+          code: zoneResult.code || 'ZONE_NOT_FOUND'
+        };
       }
 
       const zone = zoneResult.data.zone;
@@ -298,14 +333,19 @@ class CloudflareApi {
         };
       } else {
         logger.error(`❌ Failed to create ${this.recordType} record for ${recordName}: ${createResult.error}`);
-        return createResult;
+        return {
+          success: false,
+          error: createResult.error,
+          code: 'DNS_CREATE_FAILED'
+        };
       }
 
     } catch (error) {
       logger.error(`Failed to add/update DNS record for ${domain}:`, error.message);
       return {
         success: false,
-        error: error.message || 'Failed to add/update DNS record'
+        error: error.message || 'Failed to add/update DNS record',
+        code: 'DNS_OPERATION_ERROR'
       };
     }
   }

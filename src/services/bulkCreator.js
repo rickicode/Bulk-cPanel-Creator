@@ -247,11 +247,15 @@ class BulkCreator {
 
         this.processStateManager.addLog(processId, {
           level: 'warn',
-          message: `Domain ${domain} already exists, skipping`
+          message: `Domain ${domain} already exists, skipping`,
+          data: { domain, skipped: true, error: 'Domain already exists', code: 'DOMAIN_EXISTS' }
         });
 
         return result;
       }
+
+      // Initialize DNS result variable
+      let dnsResult = null;
 
       // Add Cloudflare DNS record if Cloudflare credentials provided
       if (cloudflareApi) {
@@ -262,7 +266,7 @@ class BulkCreator {
             data: { domain, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
           });
 
-          const dnsResult = await cloudflareApi.addOrUpdateDnsRecord(domain);
+          dnsResult = await cloudflareApi.addOrUpdateDnsRecord(domain);
           if (dnsResult.success) {
             const action = dnsResult.data.action;
             const actionEmoji = action === 'replaced' ? '🔄' : '✅';
@@ -289,18 +293,52 @@ class BulkCreator {
               });
             }
           } else {
+            // DNS failed - skip cPanel creation and mark as skipped
+            const skipReason = `Cloudflare DNS failed: ${dnsResult.error}`;
+            const result = {
+              success: false,
+              domain,
+              error: skipReason,
+              code: 'DNS_FAILED',
+              skipped: true,
+              reason: skipReason
+            };
+
+            processData.results.skipped.push(result);
+            processData.stats.skipped++;
+            processData.stats.processed++;
+
             this.processStateManager.addLog(processId, {
               level: 'warn',
-              message: `❌ Failed to create DNS record for ${domain}: ${dnsResult.error}`,
-              data: { domain, error: dnsResult.error }
+              message: `❌ Skipping ${domain} - ${skipReason}`,
+              data: { domain, error: dnsResult.error, code: 'DNS_FAILED', skipped: true }
             });
+
+            return result;
           }
         } catch (dnsError) {
+          // DNS error - skip cPanel creation and mark as skipped
+          const skipReason = `Cloudflare DNS error: ${dnsError.message}`;
+          const result = {
+            success: false,
+            domain,
+            error: skipReason,
+            code: 'DNS_ERROR',
+            skipped: true,
+            reason: skipReason
+          };
+
+          processData.results.skipped.push(result);
+          processData.stats.skipped++;
+          processData.stats.processed++;
+
           this.processStateManager.addLog(processId, {
             level: 'warn',
-            message: `DNS record creation error for ${domain}: ${dnsError.message}`,
-            data: { domain, error: dnsError.message }
+            message: `❌ Skipping ${domain} - ${skipReason}`,
+            data: { domain, error: dnsError.message, code: 'DNS_ERROR', skipped: true }
           });
+
+          return result;
         }
       }
 
@@ -337,6 +375,21 @@ class BulkCreator {
           email,
           message: createResult.message
         };
+
+        // Check if there was a DNS error during the process
+        if (cloudflareApi && !dnsResult?.success) {
+          result.dnsError = dnsResult?.error || 'Failed to create DNS record';
+          result.cloudflare = {
+            success: false,
+            error: dnsResult?.error || 'DNS record creation failed'
+          };
+        } else if (cloudflareApi && dnsResult?.success) {
+          result.cloudflare = {
+            success: true,
+            action: dnsResult.data?.action || 'created',
+            recordId: dnsResult.data?.record?.id
+          };
+        }
 
         processData.results.successful.push(result);
         processData.stats.successful++;

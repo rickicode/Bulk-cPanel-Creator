@@ -441,6 +441,96 @@
 
             <div id="successfulAccountsList" class="accounts-list"></div>
         </section>
+
+        <!-- Skipped Domains Section -->
+        <section id="skippedDomainsSection" class="section full-width hidden">
+            <div class="section-header">
+                <h2>Skipped Domains</h2>
+                <p>Domains that already exist or were skipped during processing</p>
+            </div>
+            
+            <div class="section-content">
+                <div class="summary-row">
+                    <div class="summary-info">
+                        <div class="summary-count" id="skippedDomainsCount">0</div>
+                        <div class="summary-label">Domains Skipped</div>
+                    </div>
+                    <div class="summary-actions">
+                        <button id="exportSkippedTxt" class="btn btn-outline" title="Export as TXT">
+                            📄 Export TXT
+                        </button>
+                        <button id="exportSkippedCsv" class="btn btn-outline" title="Export as CSV">
+                            📊 Export CSV
+                        </button>
+                        <button id="clearSkippedList" class="btn btn-outline" title="Clear list">
+                            🗑️ Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="skippedDomainsList" class="accounts-list"></div>
+        </section>
+
+        <!-- Failed Accounts Section -->
+        <section id="failedAccountsSection" class="section full-width hidden">
+            <div class="section-header">
+                <h2>Failed Accounts</h2>
+                <p>Accounts that failed to be created</p>
+            </div>
+            
+            <div class="section-content">
+                <div class="summary-row">
+                    <div class="summary-info">
+                        <div class="summary-count" id="failedAccountsCount">0</div>
+                        <div class="summary-label">Failed</div>
+                    </div>
+                    <div class="summary-actions">
+                        <button id="exportFailedTxt" class="btn btn-outline" title="Export as TXT">
+                            📄 Export TXT
+                        </button>
+                        <button id="exportFailedCsv" class="btn btn-outline" title="Export as CSV">
+                            📊 Export CSV
+                        </button>
+                        <button id="clearFailedList" class="btn btn-outline" title="Clear list">
+                            🗑️ Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="failedAccountsList" class="accounts-list"></div>
+        </section>
+
+        <!-- DNS Errors Section -->
+        <section id="dnsErrorsSection" class="section full-width hidden">
+            <div class="section-header">
+                <h2>DNS Record Errors</h2>
+                <p>Accounts created successfully but failed to add Cloudflare DNS records</p>
+            </div>
+            
+            <div class="section-content">
+                <div class="summary-row">
+                    <div class="summary-info">
+                        <div class="summary-count" id="dnsErrorsCount">0</div>
+                        <div class="summary-label">DNS Errors</div>
+                    </div>
+                    <div class="summary-actions">
+                        <button id="exportDnsErrorsTxt" class="btn btn-outline" title="Export as TXT">
+                            📄 Export TXT
+                        </button>
+                        <button id="exportDnsErrorsCsv" class="btn btn-outline" title="Export as CSV">
+                            📊 Export CSV
+                        </button>
+                        <button id="clearDnsErrorsList" class="btn btn-outline" title="Clear list">
+                            🗑️ Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dnsErrorsList" class="accounts-list"></div>
+        </section>
     </div>
 
     <!-- Loading Overlay -->
