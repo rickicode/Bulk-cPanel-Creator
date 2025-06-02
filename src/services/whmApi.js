@@ -230,13 +230,82 @@ class WHMApi {
       const response = await this.client.get('/json-api/listaccts');
       
       if (response.data && response.data.acct) {
-        const exists = response.data.acct.some(account => 
-          account.domain === domain || 
-          (account.addon_domains && account.addon_domains.includes(domain)) ||
-          (account.parked_domains && account.parked_domains.includes(domain))
-        );
+        // More detailed logging for debugging
+        logger.debug(`Checking domain ${domain} against ${response.data.acct.length} existing accounts`);
         
-        logger.debug('Domain existence check', { domain, exists });
+        const exists = response.data.acct.some(account => {
+          // Check main domain (exact match)
+          if (account.domain === domain) {
+            logger.debug(`Domain ${domain} found as main domain for account ${account.user}`);
+            return true;
+          }
+          
+          // Check addon domains (exact match)
+          if (account.addon_domains && Array.isArray(account.addon_domains)) {
+            if (account.addon_domains.includes(domain)) {
+              logger.debug(`Domain ${domain} found in addon domains for account ${account.user}`);
+              return true;
+            }
+          } else if (account.addon_domains && typeof account.addon_domains === 'string') {
+            // Handle case where addon_domains is a string (comma-separated)
+            const addonList = account.addon_domains.split(',').map(d => d.trim());
+            if (addonList.includes(domain)) {
+              logger.debug(`Domain ${domain} found in addon domains (string) for account ${account.user}`);
+              return true;
+            }
+          }
+          
+          // Check parked domains (exact match)
+          if (account.parked_domains && Array.isArray(account.parked_domains)) {
+            if (account.parked_domains.includes(domain)) {
+              logger.debug(`Domain ${domain} found in parked domains for account ${account.user}`);
+              return true;
+            }
+          } else if (account.parked_domains && typeof account.parked_domains === 'string') {
+            // Handle case where parked_domains is a string (comma-separated)
+            const parkedList = account.parked_domains.split(',').map(d => d.trim());
+            if (parkedList.includes(domain)) {
+              logger.debug(`Domain ${domain} found in parked domains (string) for account ${account.user}`);
+              return true;
+            }
+          }
+          
+          // Check subdomains (exact match)
+          if (account.sub_domains && Array.isArray(account.sub_domains)) {
+            if (account.sub_domains.includes(domain)) {
+              logger.debug(`Domain ${domain} found in subdomains for account ${account.user}`);
+              return true;
+            }
+          } else if (account.sub_domains && typeof account.sub_domains === 'string') {
+            // Handle case where sub_domains is a string (comma-separated)
+            const subList = account.sub_domains.split(',').map(d => d.trim());
+            if (subList.includes(domain)) {
+              logger.debug(`Domain ${domain} found in subdomains (string) for account ${account.user}`);
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        logger.debug('Domain existence check completed', { domain, exists });
+        
+        // Additional debug logging for the specific domain
+        if (domain === 'shopone.ethwan.in.net') {
+          logger.info(`🔍 Detailed check for ${domain}:`, {
+            domain,
+            exists,
+            totalAccounts: response.data.acct.length,
+            accountDomains: response.data.acct.map(acc => ({
+              user: acc.user,
+              domain: acc.domain,
+              addon_domains: acc.addon_domains,
+              parked_domains: acc.parked_domains,
+              sub_domains: acc.sub_domains
+            })).slice(0, 5) // Show first 5 accounts for debugging
+          });
+        }
+        
         return { success: true, exists };
       } else {
         throw new Error('Invalid accounts list response');

@@ -231,28 +231,11 @@ class BulkCreator {
         data: { domain, batchNumber, domainIndex }
       });
 
-      // Check if domain already exists
-      const existsCheck = await whmApi.checkDomainExists(domain);
-      if (existsCheck.success && existsCheck.exists) {
-        const result = {
-          success: false,
-          domain,
-          error: 'Domain already exists',
-          code: 'DOMAIN_EXISTS_ON_SERVER'
-        };
-
-        processData.results.skipped.push(result);
-        processData.stats.skipped++;
-        processData.stats.processed++;
-
-        this.processStateManager.addLog(processId, {
-          level: 'warn',
-          message: `Domain ${domain} already exists, skipping`,
-          data: { domain, skipped: true, error: 'Domain already exists', code: 'DOMAIN_EXISTS_ON_SERVER' }
-        });
-
-        return result;
-      }
+      // Skip domain existence check - let WHM tell us if domain exists during creation
+      this.processStateManager.addLog(processId, {
+        level: 'info',
+        message: `🚀 Attempting to create account for ${domain} (skip pre-check, let WHM validate)`
+      });
 
       // Initialize DNS result variable
       let dnsResult = null;
@@ -403,25 +386,58 @@ class BulkCreator {
 
         return result;
       } else {
-        const result = {
-          success: false,
-          domain,
-          username,
-          error: createResult.error,
-          code: createResult.code
-        };
+        // Check if error indicates domain already exists
+        const errorMessage = createResult.error.toLowerCase();
+        const isDomainExists = errorMessage.includes('domain already exists') ||
+                             errorMessage.includes('domain is already configured') ||
+                             errorMessage.includes('domain already on server') ||
+                             errorMessage.includes('domain is already used') ||
+                             errorMessage.includes('already exists');
 
-        processData.results.failed.push(result);
-        processData.stats.failed++;
-        processData.stats.processed++;
+        if (isDomainExists) {
+          // Domain actually exists - mark as skipped
+          const result = {
+            success: false,
+            domain,
+            username,
+            error: 'Domain already exists on server',
+            code: 'DOMAIN_EXISTS_ON_SERVER',
+            skipped: true
+          };
 
-        this.processStateManager.addLog(processId, {
-          level: 'error',
-          message: `Failed to create account for ${domain}: ${createResult.error}`,
-          data: { domain, username, error: createResult.error }
-        });
+          processData.results.skipped.push(result);
+          processData.stats.skipped++;
+          processData.stats.processed++;
 
-        return result;
+          this.processStateManager.addLog(processId, {
+            level: 'warn',
+            message: `❌ Domain ${domain} already exists on server (confirmed by WHM), skipping`,
+            data: { domain, username, error: 'Domain already exists on server', code: 'DOMAIN_EXISTS_ON_SERVER', skipped: true }
+          });
+
+          return result;
+        } else {
+          // Other error - mark as failed
+          const result = {
+            success: false,
+            domain,
+            username,
+            error: createResult.error,
+            code: createResult.code
+          };
+
+          processData.results.failed.push(result);
+          processData.stats.failed++;
+          processData.stats.processed++;
+
+          this.processStateManager.addLog(processId, {
+            level: 'error',
+            message: `❌ Failed to create account for ${domain}: ${createResult.error}`,
+            data: { domain, username, error: createResult.error, code: createResult.code }
+          });
+
+          return result;
+        }
       }
 
     } catch (error) {

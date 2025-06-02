@@ -61,7 +61,7 @@ class CloudflareApi {
 
   /**
    * Extract main domain from subdomain
-   * e.g., product4.thalvina.my.id -> thalvina.my.id
+   * e.g., shopone.ethwan.in.net -> ethwan.in.net
    */
   extractMainDomain(domain) {
     const parts = domain.split('.');
@@ -74,53 +74,17 @@ class CloudflareApi {
       const thirdLastPart = parts[parts.length - 3];
       
       // Common two-part TLDs
-      const twoPartTlds = [
-        'co.uk', 'co.id', 'my.id', 'biz.id', 'in.net', 'web.id', 'com.au', 'co.za', 'org.uk',
-        'ac.id', 'sch.id', 'or.id', 'net.id', 'go.id', 'mil.id', 'ac.uk', 'gov.uk', 'ltd.uk',
-        'plc.uk', 'me.uk', 'net.uk', 'org.za', 'com.sg', 'com.my', 'com.br', 'com.tr', 'com.sa',
-        'com.mx', 'com.ph', 'com.hk', 'com.tw', 'com.cn', 'com.ru', 'com.pl', 'com.ar', 'com.co',
-        'com.pe', 'com.ec', 'com.ve', 'com.uy', 'com.bo', 'com.py', 'com.do', 'com.gt', 'com.ni',
-        'com.pa', 'com.cr', 'com.sv', 'com.hn', 'com.cu', 'com.jo', 'com.lb', 'com.eg', 'com.qa',
-        'com.om', 'com.kw', 'com.bh', 'com.pk', 'com.bd', 'com.lk', 'com.mm', 'com.kh', 'com.vn',
-        'com.th', 'com.sg', 'com.my', 'com.au', 'com.nz', 'com.za', 'co.jp', 'co.kr', 'co.th',
-        'co.in', 'co.il', 'co.nz', 'co.ke', 'co.tz', 'co.ug', 'co.zm', 'co.zw', 'co.mz', 'co.bw',
-        'co.na', 'co.sz', 'co.ls', 'co.mw', 'co.cm', 'co.ao', 'co.ci', 'co.sn', 'co.ma', 'co.tn',
-        'co.dz', 'co.eg', 'co.sd', 'co.ly', 'co.gh', 'co.ng', 'co.sl', 'co.lr', 'co.gm', 'co.bj',
-        'co.tg', 'co.ne', 'co.ml', 'co.bf', 'co.cg', 'co.ga', 'co.gq', 'co.st', 'co.cv', 'co.gw',
-        // European domains
-        'com.de', 'com.fr', 'com.es', 'com.it', 'com.pt', 'com.nl', 'com.be', 'com.at', 'com.ch',
-        'com.se', 'com.no', 'com.dk', 'com.fi', 'com.ie', 'com.gr', 'com.cz', 'com.hu', 'com.ro',
-        'com.bg', 'com.hr', 'com.si', 'com.sk', 'com.lt', 'com.lv', 'com.ee', 'com.mt', 'com.cy',
-        'com.lu', 'com.mc', 'com.ad', 'com.sm', 'com.va', 'com.li', 'co.rs', 'co.me', 'co.ba',
-        'co.mk', 'co.al', 'co.md', 'co.ua', 'co.by', 'co.ge', 'co.am', 'co.az',
-        // Asian domains
-        'com.in', 'com.jp', 'com.kr', 'com.np', 'com.bt', 'com.af', 'com.ir', 'com.iq', 'com.sy',
-        'com.ye', 'com.ae', 'com.il', 'com.ps', 'com.uz', 'com.tm', 'com.tj', 'com.kg', 'com.kz',
-        'com.mn', 'com.la', 'com.bn', 'com.mv', 'com.fj', 'com.to', 'com.ws', 'com.tv', 'com.vu',
-        'com.sb', 'com.pg', 'com.nc', 'com.ki', 'com.nr', 'com.pw', 'com.fm', 'com.mh', 'com.ck',
-        // American domains
-        'com.ca', 'com.us', 'com.pr', 'com.vi', 'com.ag', 'com.ai', 'com.aw', 'com.bb', 'com.bm',
-        'com.bs', 'com.bz', 'com.dm', 'com.gd', 'com.gy', 'com.jm', 'com.kn', 'com.ky', 'com.lc',
-        'com.ms', 'com.tc', 'com.tt', 'com.vc', 'com.vg', 'com.sr', 'com.gf', 'com.gl', 'com.fk',
-        // African domains
-        'com.dz', 'com.ao', 'com.bj', 'com.bw', 'com.bf', 'com.bi', 'com.cm', 'com.cv', 'com.cf',
-        'com.td', 'com.km', 'com.cd', 'com.cg', 'com.ci', 'com.dj', 'com.gq', 'com.er', 'com.et',
-        'com.ga', 'com.gm', 'com.gh', 'com.gn', 'com.gw', 'com.ke', 'com.ls', 'com.lr', 'com.ly',
-        'com.mg', 'com.mw', 'com.ml', 'com.mr', 'com.mu', 'com.ma', 'com.mz', 'com.na', 'com.ne',
-        'com.ng', 'com.rw', 'com.st', 'com.sn', 'com.sc', 'com.sl', 'com.so', 'com.za', 'com.ss',
-        'com.sd', 'com.sz', 'com.tz', 'com.tg', 'com.tn', 'com.ug', 'com.eh', 'com.zm', 'com.zw',
-        // Other common two-part TLDs
-        'org.au', 'net.au', 'edu.au', 'gov.au', 'asn.au', 'id.au', 'org.za', 'net.za', 'edu.za',
-        'gov.za', 'mil.za', 'nom.za', 'ac.za', 'org.uk', 'net.uk', 'gov.uk', 'mod.uk', 'nhs.uk',
-        'police.uk', 'sch.uk', 'co.jp', 'or.jp', 'ne.jp', 'ac.jp', 'ad.jp', 'ed.jp', 'go.jp',
-        'gr.jp', 'lg.jp', 'org.in', 'net.in', 'edu.in', 'nic.in', 'ac.in', 'co.in', 'firm.in',
-        'gen.in', 'ind.in', 'mil.in', 'res.in'
-      ];
+      const twoPartTlds = ['co.uk', 'co.id', 'my.id', 'biz.id', 'in.net', 'web.id', 'com.au', 'co.za', 'org.uk'];
       const currentTld = `${secondLastPart}.${lastPart}`;
       
       if (twoPartTlds.includes(currentTld)) {
-        // For domains like product.example.co.uk -> example.co.uk
-        return `${thirdLastPart}.${currentTld}`;
+        if (parts.length >= 4) {
+          // For domains like shopone.ethwan.in.net -> ethwan.in.net
+          return `${thirdLastPart}.${currentTld}`;
+        } else {
+          // For domains like ethwan.in.net -> ethwan.in.net (already main domain)
+          return domain;
+        }
       } else {
         // For domains like product.example.com -> example.com
         return `${secondLastPart}.${lastPart}`;
@@ -273,6 +237,8 @@ class CloudflareApi {
    */
   async createDnsRecord(zoneId, recordData) {
     try {
+      logger.info(`Attempting to create DNS record:`, JSON.stringify(recordData, null, 2));
+      
       const response = await axios.post(`${this.baseURL}/zones/${zoneId}/dns_records`, recordData, {
         headers: this.headers,
         timeout: 30000
@@ -284,13 +250,31 @@ class CloudflareApi {
           data: response.data.result
         };
       } else {
+        const errorDetails = response.data.errors || [];
+        const errorMessage = errorDetails.map(err => `${err.code}: ${err.message}`).join(', ') || 'Failed to create DNS record';
+        logger.error(`Cloudflare API error response:`, JSON.stringify(response.data, null, 2));
+        
         return {
           success: false,
-          error: response.data.errors?.[0]?.message || 'Failed to create DNS record'
+          error: errorMessage,
+          details: errorDetails
         };
       }
     } catch (error) {
       logger.error('Failed to create DNS record:', error.message);
+      
+      if (error.response) {
+        logger.error('Error response data:', JSON.stringify(error.response.data, null, 2));
+        const errorMessage = error.response.data?.errors?.[0]?.message ||
+                           `HTTP ${error.response.status}: ${error.response.statusText}`;
+        return {
+          success: false,
+          error: errorMessage,
+          httpStatus: error.response.status,
+          details: error.response.data
+        };
+      }
+      
       return {
         success: false,
         error: error.message || 'Failed to create DNS record'
@@ -303,9 +287,12 @@ class CloudflareApi {
    */
   async addOrUpdateDnsRecord(domain) {
     try {
+      logger.info(`🔍 Processing DNS record for domain: ${domain}`);
+      
       // Get the zone for the main domain
       const zoneResult = await this.getZoneByDomain(domain);
       if (!zoneResult.success) {
+        logger.error(`❌ Zone lookup failed for ${domain}: ${zoneResult.error}`);
         // Return more specific error for domain not found in Cloudflare
         return {
           success: false,
@@ -317,33 +304,61 @@ class CloudflareApi {
       const zone = zoneResult.data.zone;
       const mainDomain = zoneResult.data.mainDomain;
       
+      logger.info(`✅ Found zone for main domain: ${mainDomain} (Zone ID: ${zone.id})`);
+      
       // Determine the record name
       let recordName = domain;
       if (domain === mainDomain) {
         // If it's the main domain, use '@' or the domain itself
         recordName = domain;
+        logger.info(`📍 Using main domain as record name: ${recordName}`);
+      } else {
+        logger.info(`📍 Using subdomain as record name: ${recordName}`);
       }
 
-      // Check for existing records
-      logger.info(`Checking for existing DNS records for ${recordName}...`);
-      const existingRecords = await this.getDnsRecords(zone.id, recordName, this.recordType);
+      // Validate record data before proceeding
+      if (!this.recordValue || this.recordValue.trim() === '') {
+        const error = `Record value is empty or invalid: "${this.recordValue}"`;
+        logger.error(`❌ ${error}`);
+        return {
+          success: false,
+          error: error,
+          code: 'INVALID_RECORD_VALUE'
+        };
+      }
+
+      // Check for existing records (including all types to handle A/CNAME conflicts)
+      logger.info(`🔍 Checking for existing DNS records for ${recordName}...`);
+      const existingRecords = await this.getDnsRecords(zone.id, recordName); // Check all types
       if (!existingRecords.success) {
-        logger.warn(`Could not check existing records for ${recordName}: ${existingRecords.error}`);
+        logger.warn(`⚠️ Could not check existing records for ${recordName}: ${existingRecords.error}`);
       }
 
-      // Delete existing records if any
+      // Delete existing records if any (including conflicting types)
       if (existingRecords.success && existingRecords.data.length > 0) {
-        logger.warn(`⚠️  Found ${existingRecords.data.length} existing ${this.recordType} record(s) for ${recordName}:`);
+        logger.warn(`⚠️  Found ${existingRecords.data.length} existing DNS record(s) for ${recordName}:`);
         
+        let hasConflictingTypes = false;
         for (const record of existingRecords.data) {
-          logger.info(`   - Record ID: ${record.id}, Content: ${record.content}, Proxied: ${record.proxied ? 'Yes' : 'No'}, TTL: ${record.ttl}`);
+          logger.info(`   - Record ID: ${record.id}, Type: ${record.type}, Content: ${record.content}, Proxied: ${record.proxied ? 'Yes' : 'No'}, TTL: ${record.ttl}`);
+          
+          // Check for A/CNAME conflicts
+          if ((this.recordType === 'A' && record.type === 'CNAME') ||
+              (this.recordType === 'CNAME' && record.type === 'A')) {
+            hasConflictingTypes = true;
+            logger.warn(`⚠️  Conflict detected: Trying to create ${this.recordType} but ${record.type} exists for ${recordName}`);
+          }
           
           const deleteResult = await this.deleteDnsRecord(zone.id, record.id);
           if (!deleteResult.success) {
-            logger.error(`❌ Failed to delete existing record ${record.id}: ${deleteResult.error}`);
+            logger.error(`❌ Failed to delete existing ${record.type} record ${record.id}: ${deleteResult.error}`);
           } else {
-            logger.info(`🗑️  Deleted existing ${this.recordType} record: ${recordName} -> ${record.content} (ID: ${record.id})`);
+            logger.info(`🗑️  Deleted existing ${record.type} record: ${recordName} -> ${record.content} (ID: ${record.id})`);
           }
+        }
+        
+        if (hasConflictingTypes) {
+          logger.info(`🔄 Resolved A/CNAME conflict for ${recordName} by removing conflicting records`);
         }
         
         logger.info(`✅ Cleared ${existingRecords.data.length} existing record(s) for ${recordName}`);
@@ -355,12 +370,12 @@ class CloudflareApi {
       const recordData = {
         type: this.recordType,
         name: recordName,
-        content: this.recordValue,
+        content: this.recordValue.trim(),
         ttl: 300, // 5 minutes
-        proxied: true // Default to proxied (orange cloud) instead of direct (gray cloud)
+        proxied: this.recordType === 'A' ? true : false // Only proxy A records, not CNAME
       };
 
-      logger.info(`Creating new ${this.recordType} record: ${recordName} -> ${this.recordValue} (Proxied: Yes, TTL: 300s)`);
+      logger.info(`🚀 Creating new ${this.recordType} record: ${recordName} -> ${this.recordValue} (Proxied: ${recordData.proxied ? 'Yes' : 'No'}, TTL: 300s)`);
       const createResult = await this.createDnsRecord(zone.id, recordData);
       if (createResult.success) {
         logger.info(`✅ Successfully created ${this.recordType} record for ${recordName} -> ${this.recordValue} (ID: ${createResult.data.id}, Proxied: ${createResult.data.proxied ? 'Yes' : 'No'})`);
@@ -377,12 +392,13 @@ class CloudflareApi {
         return {
           success: false,
           error: createResult.error,
-          code: 'DNS_CREATE_FAILED'
+          code: 'DNS_CREATE_FAILED',
+          details: createResult.details
         };
       }
 
     } catch (error) {
-      logger.error(`Failed to add/update DNS record for ${domain}:`, error.message);
+      logger.error(`❌ Failed to add/update DNS record for ${domain}:`, error.message);
       return {
         success: false,
         error: error.message || 'Failed to add/update DNS record',

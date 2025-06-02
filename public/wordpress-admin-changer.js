@@ -7,9 +7,13 @@ class WordPressAdminChanger {
     constructor() {
         this.currentProcessId = null;
         this.isProcessing = false;
+        this.isSshConnected = false;
         this.validationResults = null;
-        this.processResults = [];
+        this.processResults = null;
         this.successfulChanges = [];
+        this.skippedDomains = [];
+        this.failedChanges = [];
+        this.dnsErrors = [];
         this.pollingInterval = null;
         this.pollingFrequency = 2000; // 2 seconds
         this.lastLogCount = 0;
@@ -55,21 +59,8 @@ class WordPressAdminChanger {
             clearLogsBtn: document.getElementById('clearLogsBtn'),
             exportSuccessBtn: document.getElementById('exportSuccessBtn'),
             exportFailedBtn: document.getElementById('exportFailedBtn'),
-            exportAllBtn: document.getElementById('exportAllBtn'),
             
-            // Domain validation
-            domainValidation: document.getElementById('domainValidation'),
-            totalDomains: document.getElementById('totalDomains'),
-            validDomains: document.getElementById('validDomains'),
-            invalidDomains: document.getElementById('invalidDomains'),
-            duplicateDomains: document.getElementById('duplicateDomains'),
-            invalidList: document.getElementById('invalidList'),
-            invalidDomainsUl: document.getElementById('invalidDomainsUl'),
-            duplicateList: document.getElementById('duplicateList'),
-            duplicateDomainsUl: document.getElementById('duplicateDomainsUl'),
-            
-            // Progress monitoring
-            monitorSection: document.getElementById('monitorSection'),
+            // Status displays
             progressText: document.getElementById('progressText'),
             progressPercentage: document.getElementById('progressPercentage'),
             progressFill: document.getElementById('progressFill'),
@@ -78,25 +69,42 @@ class WordPressAdminChanger {
             failedCount: document.getElementById('failedCount'),
             skippedCount: document.getElementById('skippedCount'),
             
+            // Sections
+            monitorSection: document.getElementById('monitorSection'),
+            successfulChangesSection: document.getElementById('successfulChangesSection'),
+            successfulChangesList: document.getElementById('successfulChangesList'),
+            successfulChangesCount: document.getElementById('successfulChangesCount'),
+            skippedDomainsSection: document.getElementById('skippedDomainsSection'),
+            skippedDomainsList: document.getElementById('skippedDomainsList'),
+            skippedDomainsCount: document.getElementById('skippedDomainsCount'),
+            failedChangesSection: document.getElementById('failedChangesSection'),
+            failedChangesList: document.getElementById('failedChangesList'),
+            failedChangesCount: document.getElementById('failedChangesCount'),
+            dnsErrorsSection: document.getElementById('dnsErrorsSection'),
+            dnsErrorsList: document.getElementById('dnsErrorsList'),
+            dnsErrorsCount: document.getElementById('dnsErrorsCount'),
+            
             // Logs
             logsContent: document.getElementById('logsContent'),
             autoScrollLogs: document.getElementById('autoScrollLogs'),
             
-            // Results
-            resultsSection: document.getElementById('resultsSection'),
-            successfulChangesCount: document.getElementById('successfulChangesCount'),
-            failedChangesCount: document.getElementById('failedChangesCount'),
-            successResultsSection: document.getElementById('successResultsSection'),
-            failedResultsSection: document.getElementById('failedResultsSection'),
-            successResultsList: document.getElementById('successResultsList'),
-            failedResultsList: document.getElementById('failedResultsList'),
-            successResultsCount: document.getElementById('successResultsCount'),
-            failedResultsCount: document.getElementById('failedResultsCount'),
+            // Validation
+            domainValidation: document.getElementById('domainValidation'),
+            totalDomains: document.getElementById('totalDomains'),
+            validDomains: document.getElementById('validDomains'),
+            invalidDomains: document.getElementById('invalidDomains'),
+            duplicateDomains: document.getElementById('duplicateDomains'),
+            invalidList: document.getElementById('invalidList'),
+            duplicateList: document.getElementById('duplicateList'),
+            invalidDomainsUl: document.getElementById('invalidDomainsUl'),
+            duplicateDomainsUl: document.getElementById('duplicateDomainsUl'),
             
-            // UI Elements
+            // Loading
             loadingOverlay: document.getElementById('loadingOverlay'),
             loadingText: document.getElementById('loadingText'),
-            toastContainer: document.getElementById('toastContainer'),
+            
+            // Toast container
+            toastContainer: document.getElementById('toastContainer')
         };
     }
 
@@ -104,194 +112,229 @@ class WordPressAdminChanger {
      * Setup event listeners
      */
     setupEventListeners() {
-        // SSH credential field changes
-        [this.elements.sshHost, this.elements.sshPort, this.elements.sshUsername, this.elements.sshPassword].forEach(element => {
-            if (element) {
-                element.addEventListener('input', () => {
-                    this.validateSshFields();
-                });
-            }
+        // SSH credential field changes (save all changes including passwords)
+        ['sshHost', 'sshPort', 'sshUsername', 'sshPassword'].forEach(field => {
+            this.elements[field].addEventListener('input', () => {
+                this.validateSshFields();
+                this.saveSshConnectionData(); // Save SSH data including passwords
+            });
         });
 
         // WordPress config field changes
-        if (this.elements.newWpPassword) {
-            this.elements.newWpPassword.addEventListener('input', () => {
-                this.validateWordPressFields();
-                this.updateStartButtonState();
-            });
-        }
+        this.elements.newWpPassword.addEventListener('input', () => {
+            this.validateWordPressFields();
+            this.saveFormData();
+        });
 
         // Show/hide password toggle
-        if (this.elements.showPassword) {
-            this.elements.showPassword.addEventListener('change', (e) => {
-                this.elements.newWpPassword.type = e.target.checked ? 'text' : 'password';
-            });
-        }
+        this.elements.showPassword.addEventListener('change', (e) => {
+            this.elements.newWpPassword.type = e.target.checked ? 'text' : 'password';
+            this.saveFormData();
+        });
 
-        // Domain field changes
-        if (this.elements.domainList) {
-            this.elements.domainList.addEventListener('input', () => {
-                this.validateDomainFields();
-            });
-        }
+        this.elements.domainList.addEventListener('input', () => {
+            // Clear previous data when user starts typing new domains
+            if (this.currentProcessId || this.successfulChanges.length > 0) {
+                // Add a small delay to avoid clearing on every keystroke
+                clearTimeout(this.clearDataTimeout);
+                this.clearDataTimeout = setTimeout(() => {
+                    this.clearPreviousData();
+                }, 1000); // Wait 1 second after user stops typing
+            }
+            this.validateDomainFields();
+            this.saveFormData(); // Save domain list
+        });
 
         // Button clicks
-        if (this.elements.testSshConnectionBtn) {
-            this.elements.testSshConnectionBtn.addEventListener('click', () => {
-                this.testSshConnection();
-            });
-        }
+        this.elements.testSshConnectionBtn.addEventListener('click', () => {
+            this.testSshConnection();
+        });
 
-        if (this.elements.validateDomainsBtn) {
-            this.elements.validateDomainsBtn.addEventListener('click', () => {
-                this.validateDomains();
-            });
-        }
+        this.elements.validateDomainsBtn.addEventListener('click', () => {
+            this.validateDomains();
+        });
 
-        if (this.elements.clearDomainsBtn) {
-            this.elements.clearDomainsBtn.addEventListener('click', () => {
-                this.clearDomains();
-            });
-        }
+        this.elements.clearDomainsBtn.addEventListener('click', () => {
+            this.clearDomains();
+        });
 
-        if (this.elements.startChangingBtn) {
-            this.elements.startChangingBtn.addEventListener('click', () => {
-                this.startWordPressChange();
-            });
-        }
+        this.elements.startChangingBtn.addEventListener('click', () => {
+            this.startWordPressChange();
+        });
 
-        if (this.elements.stopChangingBtn) {
-            this.elements.stopChangingBtn.addEventListener('click', () => {
-                this.stopWordPressChange();
-            });
-        }
+        this.elements.stopChangingBtn.addEventListener('click', () => {
+            this.stopWordPressChange();
+        });
 
-        if (this.elements.clearLogsBtn) {
-            this.elements.clearLogsBtn.addEventListener('click', () => {
-                this.clearLogs();
-            });
-        }
+        this.elements.clearLogsBtn.addEventListener('click', () => {
+            this.clearLogs();
+        });
 
-        if (this.elements.exportSuccessBtn) {
-            this.elements.exportSuccessBtn.addEventListener('click', () => {
-                this.exportResults('success');
-            });
-        }
+        this.elements.exportSuccessBtn.addEventListener('click', () => {
+            this.exportChangesToTxt();
+        });
 
-        if (this.elements.exportFailedBtn) {
-            this.elements.exportFailedBtn.addEventListener('click', () => {
-                this.exportResults('failed');
-            });
-        }
+        // Clear successful changes event listener
+        document.getElementById('clearSuccessfulChangesBtn').addEventListener('click', () => {
+            this.clearSuccessfulChangesList();
+        });
 
-        if (this.elements.exportAllBtn) {
-            this.elements.exportAllBtn.addEventListener('click', () => {
-                this.exportResults('all');
-            });
-        }
+        // Failed changes event listeners
+        document.getElementById('exportFailedBtn').addEventListener('click', () => this.exportFailedToTxt());
+        document.getElementById('clearFailedList').addEventListener('click', () => this.clearFailedChangesList());
 
         // Auto-scroll logs
-        if (this.elements.autoScrollLogs) {
-            this.elements.autoScrollLogs.addEventListener('change', () => {
-                if (this.elements.autoScrollLogs.checked) {
-                    this.scrollLogsToBottom();
-                }
-            });
-        }
+        this.elements.autoScrollLogs.addEventListener('change', () => {
+            if (this.elements.autoScrollLogs.checked) {
+                this.scrollLogsToBottom();
+            }
+        });
     }
 
     /**
      * Load form defaults from localStorage
      */
     loadFormDefaults() {
+        const savedValues = JSON.parse(localStorage.getItem('wordpressChanger_formData') || '{}');
+        
+        Object.keys(savedValues).forEach(key => {
+            if (this.elements[key]) {
+                if (this.elements[key].type === 'checkbox') {
+                    this.elements[key].checked = savedValues[key];
+                } else {
+                    this.elements[key].value = savedValues[key];
+                }
+            }
+        });
+
+        // Load saved SSH connection data if exists
         try {
-            const saved = localStorage.getItem('wordpressChangerConfig');
-            if (saved) {
-                const config = JSON.parse(saved);
-                
-                // Load SSH settings - INCLUDING PASSWORD
-                if (config.ssh) {
-                    if (this.elements.sshHost) this.elements.sshHost.value = config.ssh.host || '';
-                    if (this.elements.sshPort) this.elements.sshPort.value = config.ssh.port || 22;
-                    if (this.elements.sshUsername) this.elements.sshUsername.value = config.ssh.username || '';
-                    if (this.elements.sshPassword) this.elements.sshPassword.value = config.ssh.password || '';
+            const savedSshDataEncoded = localStorage.getItem('wordpressChanger_sshConnection');
+            if (savedSshDataEncoded) {
+                // Try to decode the data (handle both old and new formats)
+                let savedSshData;
+                try {
+                    savedSshData = JSON.parse(atob(savedSshDataEncoded));
+                } catch (e) {
+                    // Fallback to plain JSON if base64 fails
+                    savedSshData = JSON.parse(savedSshDataEncoded);
                 }
                 
-                // Load WordPress settings - INCLUDING PASSWORD
-                if (config.wordpress) {
-                    if (this.elements.newWpPassword) this.elements.newWpPassword.value = config.wordpress.newPassword || '';
-                    if (this.elements.showPassword) this.elements.showPassword.checked = config.wordpress.showPassword || false;
+                if (savedSshData) {
+                    console.log('SSH connection data loaded from localStorage:', {
+                        host: savedSshData.host,
+                        port: savedSshData.port,
+                        username: savedSshData.username,
+                        hasPassword: !!savedSshData.password
+                    });
                     
-                    // Apply show/hide password state
-                    if (this.elements.showPassword.checked) {
-                        this.elements.newWpPassword.type = 'text';
-                    }
-                }
-                
-                // Load domain list
-                if (config.domains && this.elements.domainList) {
-                    this.elements.domainList.value = config.domains.join('\n');
+                    this.elements.sshHost.value = savedSshData.host || '';
+                    this.elements.sshPort.value = savedSshData.port || 22;
+                    this.elements.sshUsername.value = savedSshData.username || '';
+                    this.elements.sshPassword.value = savedSshData.password || '';
                 }
             }
         } catch (error) {
-            console.error('Error loading saved config:', error);
+            console.error('Error loading saved SSH connection data:', error);
         }
-        
-        // Validate fields after loading
+
+        // Apply show/hide password state after loading
+        if (this.elements.showPassword && this.elements.showPassword.checked) {
+            this.elements.newWpPassword.type = 'text';
+        }
+
+        // Trigger validations
         this.validateSshFields();
         this.validateWordPressFields();
         this.validateDomainFields();
     }
 
     /**
-     * Save form data to localStorage - INCLUDING ALL PASSWORDS
+     * Save form data to localStorage
      */
     saveFormData() {
         try {
-            const config = {
-                ssh: {
-                    host: this.elements.sshHost?.value || '',
-                    port: parseInt(this.elements.sshPort?.value) || 22,
-                    username: this.elements.sshUsername?.value || '',
-                    password: this.elements.sshPassword?.value || '' // SAVE PASSWORD
-                },
-                wordpress: {
-                    newPassword: this.elements.newWpPassword?.value || '', // SAVE PASSWORD
-                    showPassword: this.elements.showPassword?.checked || false
-                },
-                domains: this.getDomainList()
-            };
+            const fieldsToSave = [
+                'newWpPassword', 'showPassword', 'domainList'
+            ];
             
-            localStorage.setItem('wordpressChangerConfig', JSON.stringify(config));
+            const formData = {};
+            fieldsToSave.forEach(field => {
+                if (this.elements[field]) {
+                    if (this.elements[field].type === 'checkbox') {
+                        formData[field] = this.elements[field].checked;
+                    } else {
+                        formData[field] = this.elements[field].value;
+                    }
+                }
+            });
+            
+            localStorage.setItem('wordpressChanger_formData', JSON.stringify(formData));
         } catch (error) {
-            console.error('Error saving config:', error);
+            console.error('Error saving form data:', error);
         }
+    }
+
+    /**
+     * Save SSH connection data to localStorage (encoded for security)
+     */
+    saveSshConnectionData() {
+        const sshData = {
+            host: this.elements.sshHost.value,
+            port: this.elements.sshPort.value,
+            username: this.elements.sshUsername.value,
+            password: this.elements.sshPassword.value
+        };
+        
+        // Encode the data before storing
+        const encoded = btoa(JSON.stringify(sshData));
+        localStorage.setItem('wordpressChanger_sshConnection', encoded);
+        
+        console.log('SSH connection data saved to localStorage:', {
+            host: sshData.host,
+            port: sshData.port,
+            username: sshData.username,
+            hasPassword: !!sshData.password
+        });
+    }
+
+    /**
+     * Get SSH credentials
+     */
+    getSshCredentials() {
+        return {
+            host: this.elements.sshHost.value.trim(),
+            port: parseInt(this.elements.sshPort.value) || 22,
+            username: this.elements.sshUsername.value.trim(),
+            password: this.elements.sshPassword.value
+        };
     }
 
     /**
      * Validate SSH credential fields and enable/disable test button
      */
     validateSshFields() {
-        const host = this.elements.sshHost?.value.trim() || '';
-        const username = this.elements.sshUsername?.value.trim() || '';
-        const password = this.elements.sshPassword?.value || '';
+        const host = this.elements.sshHost.value.trim();
+        const username = this.elements.sshUsername.value.trim();
+        const password = this.elements.sshPassword.value;
 
         const isValid = host && username && password;
+
+        this.elements.testSshConnectionBtn.disabled = !isValid;
         
-        if (this.elements.testSshConnectionBtn) {
-            this.elements.testSshConnectionBtn.disabled = !isValid;
+        // Save SSH connection data whenever valid data is entered
+        if (isValid) {
+            this.saveSshConnectionData();
         }
         
         this.updateStartButtonState();
-        this.saveFormData();
     }
 
     /**
      * Validate WordPress credential fields
      */
     validateWordPressFields() {
-        const newPassword = this.elements.newWpPassword?.value || '';
-        
+        const newPassword = this.elements.newWpPassword.value;
         this.updateStartButtonState();
         return !!newPassword;
     }
@@ -300,36 +343,40 @@ class WordPressAdminChanger {
      * Validate domain fields and enable/disable related buttons
      */
     validateDomainFields() {
-        const domains = this.elements.domainList?.value.trim() || '';
-        
-        if (this.elements.validateDomainsBtn) {
-            this.elements.validateDomainsBtn.disabled = !domains;
-        }
-        
+        const domains = this.elements.domainList.value.trim();
+        this.elements.validateDomainsBtn.disabled = !domains;
         this.updateStartButtonState();
-        this.saveFormData();
     }
 
     /**
-     * Update start button state based on all requirements
+     * Update start button state based on all requirements (matching index.js pattern)
      */
     updateStartButtonState() {
-        const hasSshCredentials = !!(this.elements.sshHost?.value.trim() && 
-                                    this.elements.sshUsername?.value.trim() && 
-                                    this.elements.sshPassword?.value);
-        const hasWpPassword = !!(this.elements.newWpPassword?.value);
+        const hasDomains = this.elements.domainList.value.trim();
         const hasValidDomains = this.validationResults && this.validationResults.valid.length > 0;
+        const hasSshCredentials = this.getSshCredentials().host && this.getSshCredentials().username && this.getSshCredentials().password;
+        const hasWpPassword = this.elements.newWpPassword.value;
         
-        if (this.elements.startChangingBtn) {
-            this.elements.startChangingBtn.disabled = !hasSshCredentials || !hasWpPassword || !hasValidDomains || this.isProcessing;
-        }
+        // More strict validation like index.js - require connection test or valid credentials
+        const canStart = hasSshCredentials && hasWpPassword && hasValidDomains && !this.isProcessing;
+        
+        this.elements.startChangingBtn.disabled = !canStart;
+        this.elements.stopChangingBtn.disabled = !this.isProcessing;
+    }
+
+    /**
+     * Update connection status display (placeholder for REST mode)
+     */
+    updateConnectionStatus(status) {
+        // No UI elements for connection status in REST mode
+        console.log('Connection status:', status);
     }
 
     /**
      * Get domain list from textarea
      */
     getDomainList() {
-        const domainText = this.elements.domainList?.value || '';
+        const domainText = this.elements.domainList.value || '';
         return domainText.split('\n')
             .map(domain => domain.trim())
             .filter(domain => domain.length > 0);
@@ -340,15 +387,15 @@ class WordPressAdminChanger {
      */
     getSshCredentials() {
         return {
-            host: this.elements.sshHost?.value.trim() || '',
-            port: parseInt(this.elements.sshPort?.value) || 22,
-            username: this.elements.sshUsername?.value.trim() || '',
-            password: this.elements.sshPassword?.value || ''
+            host: this.elements.sshHost.value.trim(),
+            port: parseInt(this.elements.sshPort.value) || 22,
+            username: this.elements.sshUsername.value.trim(),
+            password: this.elements.sshPassword.value
         };
     }
 
     /**
-     * Test SSH connection
+     * Test SSH connection (matching index.js pattern)
      */
     async testSshConnection() {
         const credentials = this.getSshCredentials();
@@ -372,17 +419,28 @@ class WordPressAdminChanger {
             const result = await response.json();
 
             if (result.success) {
+                this.isSshConnected = true;
                 this.showToast('success', 'SSH connection successful!');
                 this.addLog('info', 'SSH connection test passed');
+                
+                // Save SSH connection data after successful test (matching index.js pattern)
+                this.saveSshConnectionData();
+                
+                // Update button states
+                this.updateStartButtonState();
             } else {
+                this.isSshConnected = false;
                 this.showToast('error', `SSH connection failed: ${result.error}`);
                 this.addLog('error', `SSH connection failed: ${result.error}`);
+                this.updateStartButtonState();
             }
 
         } catch (error) {
             console.error('SSH test error:', error);
+            this.isSshConnected = false;
             this.showToast('error', 'Failed to test SSH connection');
             this.addLog('error', `SSH connection test error: ${error.message}`);
+            this.updateStartButtonState();
         } finally {
             this.hideLoading();
         }
@@ -513,11 +571,8 @@ class WordPressAdminChanger {
             return;
         }
 
-        // Don't clear previous data - let the counters accumulate
-        // Only reset process state without clearing UI counters
-        this.currentProcessId = null;
-        this.isProcessing = false;
-        this.lastLogCount = 0;
+        // Clear previous data when starting new process (matching index.js pattern)
+        this.clearPreviousData();
 
         this.showLoading('Starting WordPress admin change...');
         
@@ -555,12 +610,9 @@ class WordPressAdminChanger {
                 } else {
                     console.log('Monitor section element not found!');
                 }
-                if (this.elements.startChangingBtn) {
-                    this.elements.startChangingBtn.disabled = true;
-                }
-                if (this.elements.stopChangingBtn) {
-                    this.elements.stopChangingBtn.disabled = false;
-                }
+                
+                // Update button states
+                this.updateStartButtonState();
                 
                 // Start polling for updates
                 console.log('About to start polling...');
@@ -568,7 +620,7 @@ class WordPressAdminChanger {
                 
                 this.showToast('success', `WordPress change started! Process ID: ${result.processId}`);
                 this.addLog('info', `WordPress change started - Process ID: ${result.processId}`);
-                this.addLog('info', `Total domains to process: ${result.totalDomains}`);
+                this.addLog('info', `Total domains to process: ${result.totalDomains || this.validationResults.valid.length}`);
                 
                 if (result.invalidDomains > 0) {
                     this.addLog('warn', `${result.invalidDomains} invalid domains will be skipped`);
@@ -578,12 +630,16 @@ class WordPressAdminChanger {
                 }
                 
             } else {
+                this.isProcessing = false;
+                this.updateStartButtonState();
                 this.showToast('error', `Failed to start change: ${result.error}`);
                 this.addLog('error', `WordPress change failed: ${result.error}`);
             }
 
         } catch (error) {
             console.error('WordPress change error:', error);
+            this.isProcessing = false;
+            this.updateStartButtonState();
             this.showToast('error', 'Failed to start WordPress change');
             this.addLog('error', `WordPress change error: ${error.message}`);
         } finally {
@@ -592,7 +648,7 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Stop WordPress admin change process
+     * Stop WordPress admin change process (matching index.js pattern)
      */
     async stopWordPressChange() {
         if (!this.currentProcessId) return;
@@ -609,12 +665,7 @@ class WordPressAdminChanger {
             if (result.success) {
                 this.stopPolling();
                 this.isProcessing = false;
-                if (this.elements.startChangingBtn) {
-                    this.elements.startChangingBtn.disabled = false;
-                }
-                if (this.elements.stopChangingBtn) {
-                    this.elements.stopChangingBtn.disabled = true;
-                }
+                this.updateStartButtonState();
                 
                 this.showToast('info', 'Process stopped');
                 this.addLog('warn', 'Process stopped by user');
@@ -631,7 +682,7 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Start polling for process updates
+     * Start polling for process updates (matching index.js pattern)
      */
     startPolling() {
         if (!this.currentProcessId || this.pollingInterval) {
@@ -665,30 +716,21 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Poll process status
+     * Poll process status (matching index.js pattern)
      */
     async pollProcessStatus() {
-        if (!this.currentProcessId) {
-            console.log('No current process ID, skipping status poll');
-            return;
-        }
+        if (!this.currentProcessId) return;
 
         try {
-            console.log('Fetching status for process:', this.currentProcessId);
             const response = await fetch(`/api/process/${this.currentProcessId}/status`);
             const result = await response.json();
-            
-            console.log('Status response:', { status: response.status, result });
 
             if (result.success && result.data) {
                 this.handleProcessStatus(result.data);
             } else if (response.status === 404) {
                 // Process not found, stop polling
-                console.log('Process not found (404), stopping polling');
                 this.stopPolling();
                 this.addLog('warn', 'Process not found, stopped polling');
-            } else {
-                console.log('Status response not successful:', result);
             }
         } catch (error) {
             console.error('Failed to poll process status:', error);
@@ -696,39 +738,135 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Poll process logs
+     * Poll process logs (matching index.js pattern)
      */
     async pollProcessLogs() {
         if (!this.currentProcessId) return;
 
         try {
-            // Use same approach as main app: get all logs with limit, then slice to get new ones
-            const response = await fetch(`/api/process/${this.currentProcessId}/logs?limit=100`);
+            const response = await fetch(`/api/process/${this.currentProcessId}/logs?limit=50`);
             const result = await response.json();
-            
-            if (result.success && result.data && result.data.logs) {
-                const allLogs = result.data.logs;
-                
-                // Only process new logs we haven't seen before
-                const newLogs = allLogs.slice(this.lastLogCount);
-                
-                if (newLogs.length > 0) {
-                    newLogs.forEach((log) => {
-                        // Handle both direct log objects and nested log data
-                        const logData = log.data || log;
-                        const level = logData.level || log.level || 'info';
-                        const message = logData.message || log.message || 'No message';
-                        const timestamp = logData.timestamp || log.timestamp || new Date().toISOString();
-                        
-                        this.addLog(level, message, new Date(timestamp));
-                    });
-                    
-                    // Update last log count to total logs seen
-                    this.lastLogCount = allLogs.length;
-                }
+
+            if (result.success && result.data.logs) {
+                this.handleNewLogs(result.data.logs);
             }
         } catch (error) {
             console.error('Failed to poll process logs:', error);
+        }
+    }
+
+    /**
+     * Handle new logs from polling (matching index.js pattern)
+     */
+    handleNewLogs(logs) {
+        // Only add new logs we haven't seen before
+        const newLogs = logs.slice(this.lastLogCount);
+        this.lastLogCount = logs.length;
+
+        newLogs.forEach(log => {
+            this.handleLog(log);
+        });
+    }
+
+    /**
+     * Handle individual log entry (matching index.js pattern)
+     */
+    handleLog(data) {
+        // Extract log data
+        const logData = data.data || data;
+        const level = logData.level || data.level || 'info';
+        const message = logData.message || data.message || 'No message';
+        const timestamp = logData.timestamp || data.timestamp || new Date().toISOString();
+        
+        this.addLog(level, message, new Date(timestamp));
+
+        // Handle special log types that update results (matching index.js pattern)
+        if (logData.type === 'wordpress_success' || (logData.success && logData.domain)) {
+            this.addSuccessfulChangeFromLog(logData);
+        } else if (logData.type === 'wordpress_failed' || (logData.success === false && logData.domain)) {
+            this.addFailedChangeFromLog(logData);
+        }
+    }
+
+    /**
+     * Add successful change from log data (matching index.js pattern)
+     */
+    addSuccessfulChangeFromLog(logData) {
+        if (!logData.domain) return;
+
+        const changeData = {
+            domain: logData.domain,
+            cpanelUser: logData.cpanelUser || logData.username,
+            wpUser: logData.wpUser || logData.wpUsername,
+            wpEmail: logData.wpEmail || logData.email,
+            newPassword: logData.newPassword || logData.newWpPassword,
+            loginUrl: logData.loginUrl,
+            hasMagicLink: logData.hasMagicLink || false,
+            success: true
+        };
+
+        this.addSuccessfulChange(changeData);
+    }
+
+    /**
+     * Add failed change from log data (matching index.js pattern)
+     */
+    addFailedChangeFromLog(logData) {
+        if (!logData.domain) return;
+
+        const failedData = {
+            domain: logData.domain,
+            error: logData.error || logData.message || 'Unknown error',
+            cpanelUser: logData.cpanelUser || logData.username,
+            success: false
+        };
+
+        this.addFailedChange(failedData);
+    }
+
+    /**
+     * Add successful change (matching index.js pattern)
+     */
+    addSuccessfulChange(changeData) {
+        // Avoid duplicates
+        if (!this.successfulChanges.some(change => change.domain === changeData.domain)) {
+            this.successfulChanges.push(changeData);
+            
+            // Update display
+            if (this.elements.successfulChangesCount) {
+                this.elements.successfulChangesCount.textContent = this.successfulChanges.length;
+            }
+            
+            // Show section if hidden
+            if (this.elements.successfulChangesSection) {
+                this.elements.successfulChangesSection.classList.remove('hidden');
+            }
+            
+            // Update the list display
+            this.displaySuccessfulChanges(this.successfulChanges);
+        }
+    }
+
+    /**
+     * Add failed change (matching index.js pattern)
+     */
+    addFailedChange(failedData) {
+        // Avoid duplicates
+        if (!this.failedChanges.some(change => change.domain === failedData.domain)) {
+            this.failedChanges.push(failedData);
+            
+            // Update display
+            if (this.elements.failedChangesCount) {
+                this.elements.failedChangesCount.textContent = this.failedChanges.length;
+            }
+            
+            // Show section if hidden
+            if (this.elements.failedChangesSection) {
+                this.elements.failedChangesSection.classList.remove('hidden');
+            }
+            
+            // Update the list display
+            this.displayFailedChanges(this.failedChanges);
         }
     }
 
@@ -747,87 +885,66 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Handle process completion
+     * Handle process completion (matching index.js pattern)
      */
     handleProcessCompleted(data) {
         this.stopPolling();
         this.isProcessing = false;
-
-        if (this.elements.startChangingBtn) {
-            this.elements.startChangingBtn.disabled = false;
-        }
-        if (this.elements.stopChangingBtn) {
-            this.elements.stopChangingBtn.disabled = true;
-        }
+        this.updateStartButtonState();
 
         this.addLog('success', 'WordPress admin change process completed!');
 
-        // Update all results (success and failed)
+        // Handle results like in index.js - store all results
         if (data.results) {
             // Handle both data.results (array) and data.results.results (nested object) formats
             const results = Array.isArray(data.results) ? data.results : (data.results.results || []);
             if (results.length > 0) {
                 this.processResults = results; // Store all results for export
-                this.successfulChanges = results.filter(result => result.success); // Keep for backward compatibility
+                
+                // Separate successful and failed results
+                this.successfulChanges = results.filter(result => result.success);
+                this.failedChanges = results.filter(result => !result.success);
+                
                 this.displayResults(results);
             } else {
                 this.addLog('warn', 'Process completed but no results found to display');
-                // Still show results section with empty state
-                if (this.elements.resultsSection) {
-                    this.elements.resultsSection.classList.remove('hidden');
-                    if (this.elements.successfulChangesCount) {
-                        this.elements.successfulChangesCount.textContent = '0';
-                    }
-                    if (this.elements.failedChangesCount) {
-                        this.elements.failedChangesCount.textContent = '0';
-                    }
-                    if (this.elements.successResultsList) {
-                        this.elements.successResultsList.innerHTML = '<div class="no-results-message">No results to display. Check the logs for more information.</div>';
-                    }
-                    if (this.elements.failedResultsList) {
-                        this.elements.failedResultsList.innerHTML = '<div class="no-results-message">No results to display. Check the logs for more information.</div>';
-                    }
-                }
+                this.showEmptyResults();
             }
         } else {
             this.addLog('warn', 'No results data received from server');
-            // Still show results section with error message
-            if (this.elements.resultsSection) {
-                this.elements.resultsSection.classList.remove('hidden');
-                if (this.elements.successfulChangesCount) {
-                    this.elements.successfulChangesCount.textContent = '0';
-                }
-                if (this.elements.resultsList) {
-                    this.elements.resultsList.innerHTML = '<div class="no-results-message">No results data received from server. Check the logs for more information.</div>';
-                }
-            }
+            this.showEmptyResults();
         }
 
         this.showToast('success', 'WordPress change completed!');
-        this.updateStartButtonState();
     }
 
     /**
-     * Handle process failure
+     * Show empty results state (matching index.js pattern)
+     */
+    showEmptyResults() {
+        // Don't show sections if no results
+        if (this.elements.successfulChangesSection) {
+            this.elements.successfulChangesSection.classList.add('hidden');
+        }
+        if (this.elements.failedChangesSection) {
+            this.elements.failedChangesSection.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Handle process failure (matching index.js pattern)
      */
     handleProcessFailed(data) {
         this.stopPolling();
         this.isProcessing = false;
-
-        if (this.elements.startChangingBtn) {
-            this.elements.startChangingBtn.disabled = false;
-        }
-        if (this.elements.stopChangingBtn) {
-            this.elements.stopChangingBtn.disabled = true;
-        }
+        this.updateStartButtonState();
 
         this.addLog('error', `Process failed: ${data.error?.message || 'Unknown error'}`);
         this.showToast('error', `Process failed: ${data.error?.message || 'Unknown error'}`);
-        this.updateStartButtonState();
     }
 
     /**
-     * Update progress display
+     * Update progress display (matching index.js handleProgress pattern)
      */
     updateProgress(data) {
         // Progress data is nested in data.progress from processStateManager
@@ -868,7 +985,14 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Display results
+     * Handle progress updates (matching index.js pattern)
+     */
+    handleProgress(progress) {
+        this.updateProgress({ progress });
+    }
+
+    /**
+     * Display results (matching index.js pattern - show individual sections)
      */
     displayResults(results) {
         if (!results || results.length === 0) {
@@ -878,127 +1002,118 @@ class WordPressAdminChanger {
         const successfulResults = results.filter(r => r.success);
         const failedResults = results.filter(r => !r.success);
         
-        // Update summary counts
-        if (this.elements.successfulChangesCount) {
-            this.elements.successfulChangesCount.textContent = successfulResults.length;
-        }
-        if (this.elements.failedChangesCount) {
-            this.elements.failedChangesCount.textContent = failedResults.length;
-        }
-
-        // Display successful results
-        this.displaySuccessResults(successfulResults);
+        // Display successful results section
+        this.displaySuccessfulChanges(successfulResults);
         
-        // Display failed results
-        this.displayFailedResults(failedResults);
-
-        // Show results section
-        if (this.elements.resultsSection) {
-            this.elements.resultsSection.classList.remove('hidden');
-        }
+        // Display failed results section
+        this.displayFailedChanges(failedResults);
     }
 
     /**
-     * Display successful results
+     * Display successful changes (matching index.js pattern)
      */
-    displaySuccessResults(successfulResults) {
-        if (this.elements.successResultsCount) {
-            this.elements.successResultsCount.textContent = `${successfulResults.length} domains`;
+    displaySuccessfulChanges(successfulResults) {
+        // Update count
+        if (this.elements.successfulChangesCount) {
+            this.elements.successfulChangesCount.textContent = successfulResults.length;
         }
 
-        if (this.elements.successResultsList) {
-            this.elements.successResultsList.innerHTML = successfulResults.map(result => `
-                <div class="account-card success">
-                    <div class="account-header">
-                        <div class="account-domain">${result.domain}</div>
-                        <div class="account-status status-success">
-                            ✓ Success
-                        </div>
-                    </div>
-                    <div class="account-details">
-                        <div class="detail-row">
-                            <span class="detail-label">cPanel User:</span>
-                            <span class="detail-value">${result.cpanelUser || 'N/A'}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">WP Admin User:</span>
-                            <span class="detail-value">${result.wpUser || 'N/A'}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">WP Admin Email:</span>
-                            <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">New Password:</span>
-                            <span class="detail-value password-field">${result.newPassword || result.newWpPassword || 'N/A'}</span>
-                        </div>
-                        ${result.loginUrl ? `
-                        <div class="detail-row">
-                            <span class="detail-label">Login URL:</span>
-                            <div class="login-link-container">
-                                <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
-                                    ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
-                                </a>
-                                <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
-                                    📋
-                                </button>
+        // Show/hide section based on results
+        if (this.elements.successfulChangesSection) {
+            if (successfulResults.length > 0) {
+                this.elements.successfulChangesSection.classList.remove('hidden');
+                
+                // Populate results list
+                if (this.elements.successfulChangesList) {
+                    this.elements.successfulChangesList.innerHTML = successfulResults.map(result => `
+                        <div class="account-card success">
+                            <div class="account-header">
+                                <div class="account-domain">${result.domain}</div>
+                                <div class="account-status status-success">
+                                    ✓ Success
+                                </div>
+                            </div>
+                            <div class="account-details">
+                                <div class="detail-row">
+                                    <span class="detail-label">cPanel User:</span>
+                                    <span class="detail-value">${result.cpanelUser || 'N/A'}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">WP Admin User:</span>
+                                    <span class="detail-value">${result.wpUser || 'N/A'}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">WP Admin Email:</span>
+                                    <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">New Password:</span>
+                                    <span class="detail-value password-field">${result.newPassword || result.newWpPassword || 'N/A'}</span>
+                                </div>
+                                ${result.loginUrl ? `
+                                <div class="detail-row">
+                                    <span class="detail-label">Login URL:</span>
+                                    <div class="login-link-container">
+                                        <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
+                                            ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
+                                        </a>
+                                        <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+                                ` : ''}
                             </div>
                         </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Show/hide success results section
-        if (this.elements.successResultsSection) {
-            if (successfulResults.length > 0) {
-                this.elements.successResultsSection.classList.remove('hidden');
+                    `).join('');
+                }
             } else {
-                this.elements.successResultsSection.classList.add('hidden');
+                this.elements.successfulChangesSection.classList.add('hidden');
             }
         }
     }
 
     /**
-     * Display failed results
+     * Display failed changes (matching index.js pattern)
      */
-    displayFailedResults(failedResults) {
-        if (this.elements.failedResultsCount) {
-            this.elements.failedResultsCount.textContent = `${failedResults.length} domains`;
+    displayFailedChanges(failedResults) {
+        // Update count
+        if (this.elements.failedChangesCount) {
+            this.elements.failedChangesCount.textContent = failedResults.length;
         }
 
-        if (this.elements.failedResultsList) {
-            this.elements.failedResultsList.innerHTML = failedResults.map(result => `
-                <div class="account-card failed">
-                    <div class="account-header">
-                        <div class="account-domain">${result.domain}</div>
-                        <div class="account-status status-error">
-                            ✗ Failed
-                        </div>
-                    </div>
-                    <div class="account-details">
-                        <div class="detail-row error">
-                            <span class="detail-label">Error:</span>
-                            <span class="detail-value">${result.error || 'Unknown error'}</span>
-                        </div>
-                        ${result.cpanelUser ? `
-                        <div class="detail-row">
-                            <span class="detail-label">cPanel User:</span>
-                            <span class="detail-value">${result.cpanelUser}</span>
-                        </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Show/hide failed results section
-        if (this.elements.failedResultsSection) {
+        // Show/hide section based on results
+        if (this.elements.failedChangesSection) {
             if (failedResults.length > 0) {
-                this.elements.failedResultsSection.classList.remove('hidden');
+                this.elements.failedChangesSection.classList.remove('hidden');
+                
+                // Populate results list
+                if (this.elements.failedChangesList) {
+                    this.elements.failedChangesList.innerHTML = failedResults.map(result => `
+                        <div class="account-card failed">
+                            <div class="account-header">
+                                <div class="account-domain">${result.domain}</div>
+                                <div class="account-status status-error">
+                                    ✗ Failed
+                                </div>
+                            </div>
+                            <div class="account-details">
+                                <div class="detail-row error">
+                                    <span class="detail-label">Error:</span>
+                                    <span class="detail-value">${result.error || 'Unknown error'}</span>
+                                </div>
+                                ${result.cpanelUser ? `
+                                <div class="detail-row">
+                                    <span class="detail-label">cPanel User:</span>
+                                    <span class="detail-value">${result.cpanelUser}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                }
             } else {
-                this.elements.failedResultsSection.classList.add('hidden');
+                this.elements.failedChangesSection.classList.add('hidden');
             }
         }
     }
@@ -1123,7 +1238,7 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Clear previous process data
+     * Clear previous process data (matching index.js pattern)
      */
     clearPreviousData() {
         // Clear timeout if active
@@ -1140,17 +1255,15 @@ class WordPressAdminChanger {
         this.isProcessing = false;
         this.lastLogCount = 0;
         this.successfulChanges = [];
+        this.failedChanges = [];
         this.processResults = [];
 
-        // DON'T hide monitor section - keep progress visible
-        if (this.elements.resultsSection) {
-            this.elements.resultsSection.classList.add('hidden');
+        // Hide results sections (matching index.js pattern)
+        if (this.elements.successfulChangesSection) {
+            this.elements.successfulChangesSection.classList.add('hidden');
         }
-        if (this.elements.successResultsSection) {
-            this.elements.successResultsSection.classList.add('hidden');
-        }
-        if (this.elements.failedResultsSection) {
-            this.elements.failedResultsSection.classList.add('hidden');
+        if (this.elements.failedChangesSection) {
+            this.elements.failedChangesSection.classList.add('hidden');
         }
 
         // Reset progress
@@ -1158,18 +1271,25 @@ class WordPressAdminChanger {
         if (this.elements.progressPercentage) this.elements.progressPercentage.textContent = '0%';
         if (this.elements.progressFill) this.elements.progressFill.style.width = '0%';
 
-        // DON'T reset progress counters - let them accumulate across sessions
-        // DON'T reset results counters - preserve the counts
+        // Reset progress counters
+        if (this.elements.processedCount) this.elements.processedCount.textContent = '0';
+        if (this.elements.successCount) this.elements.successCount.textContent = '0';
+        if (this.elements.failedCount) this.elements.failedCount.textContent = '0';
+        if (this.elements.skippedCount) this.elements.skippedCount.textContent = '0';
 
-        // Clear results lists only
-        if (this.elements.successResultsList) {
-            this.elements.successResultsList.innerHTML = '';
+        // Clear results lists and counts (matching index.js pattern)
+        if (this.elements.successfulChangesList) {
+            this.elements.successfulChangesList.innerHTML = '';
         }
-        if (this.elements.failedResultsList) {
-            this.elements.failedResultsList.innerHTML = '';
+        if (this.elements.failedChangesList) {
+            this.elements.failedChangesList.innerHTML = '';
         }
-
-        // DON'T clear logs - keep for debugging and history
+        if (this.elements.successfulChangesCount) {
+            this.elements.successfulChangesCount.textContent = '0';
+        }
+        if (this.elements.failedChangesCount) {
+            this.elements.failedChangesCount.textContent = '0';
+        }
 
         // Update button states
         this.updateStartButtonState();
@@ -1179,127 +1299,133 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Export results based on type
+     * Export successful changes to TXT (matching index.js pattern)
      */
-    exportResults(type = 'all') {
-        if (!this.processResults || this.processResults.length === 0) {
-            this.showToast('error', 'No results to export');
+    exportChangesToTxt() {
+        if (this.successfulChanges.length === 0) {
+            this.showToast('error', 'No successful changes to export');
             return;
         }
 
         try {
-            let resultsToExport = [];
-            let filename = '';
-            let title = '';
-
-            switch (type) {
-                case 'success':
-                    resultsToExport = this.processResults.filter(r => r.success);
-                    if (resultsToExport.length === 0) {
-                        this.showToast('error', 'No successful changes to export');
-                        return;
-                    }
-                    filename = `wordpress-success-${new Date().toISOString().split('T')[0]}.txt`;
-                    title = 'WordPress Admin Change - Successful Results';
-                    break;
-
-                case 'failed':
-                    resultsToExport = this.processResults.filter(r => !r.success);
-                    if (resultsToExport.length === 0) {
-                        this.showToast('error', 'No failed changes to export');
-                        return;
-                    }
-                    filename = `wordpress-failed-domains-${new Date().toISOString().split('T')[0]}.txt`;
-                    
-                    // For failed export, create simple domain list
-                    const failedDomains = resultsToExport.map(result => result.domain).join('\n');
-                    
-                    const blob = new Blob([failedDomains], { type: 'text/plain' });
-                    const url = window.URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    window.URL.revokeObjectURL(url);
-
-                    this.showToast('success', 'Failed domains list exported successfully');
-                    return; // Exit early for failed export
-
-                case 'all':
-                default:
-                    resultsToExport = this.processResults;
-                    filename = `wordpress-all-results-${new Date().toISOString().split('T')[0]}.txt`;
-                    title = 'WordPress Admin Change - All Results';
-                    break;
-            }
-
-            let content = `${title}\n`;
-            content += '='.repeat(title.length) + '\n\n';
+            let content = 'WordPress Admin Changes - Successful Results\n';
+            content += '=' .repeat(50) + '\n\n';
             content += `Export Date: ${new Date().toLocaleString()}\n`;
-            content += `Total Results: ${resultsToExport.length}\n`;
-            
-            if (type === 'all') {
-                const successCount = this.processResults.filter(r => r.success).length;
-                const failedCount = this.processResults.filter(r => !r.success).length;
-                content += `Successful: ${successCount}\n`;
-                content += `Failed: ${failedCount}\n`;
-            }
-            
-            content += '\n';
+            content += `Total Changes: ${this.successfulChanges.length}\n\n`;
 
-            resultsToExport.forEach((result, index) => {
+            this.successfulChanges.forEach((result, index) => {
                 content += `${index + 1}. Domain: ${result.domain}\n`;
-                content += `   Status: ${result.success ? 'SUCCESS' : 'FAILED'}\n`;
-                
-                if (result.success) {
-                    content += `   cPanel User: ${result.cpanelUser || 'N/A'}\n`;
-                    content += `   WP Admin User: ${result.wpUser || 'N/A'}\n`;
-                    content += `   WP Admin Email: ${result.wpEmail || `admin@${result.domain}`}\n`;
-                    content += `   New Password: ${result.newPassword || result.newWpPassword || 'N/A'}\n`;
-                    if (result.loginUrl) {
-                        content += `   Login URL: ${result.loginUrl}\n`;
-                        content += `   Magic Link: ${result.hasMagicLink ? 'Yes' : 'No'}\n`;
-                    }
-                } else {
-                    content += `   Error: ${result.error || 'Unknown error'}\n`;
-                    if (result.cpanelUser) {
-                        content += `   cPanel User: ${result.cpanelUser}\n`;
-                    }
+                content += `   cPanel User: ${result.cpanelUser || 'N/A'}\n`;
+                content += `   WP Admin User: ${result.wpUser || 'N/A'}\n`;
+                content += `   WP Admin Email: ${result.wpEmail || `admin@${result.domain}`}\n`;
+                content += `   New Password: ${result.newPassword || result.newWpPassword || 'N/A'}\n`;
+                if (result.loginUrl) {
+                    content += `   Login URL: ${result.loginUrl}\n`;
+                    content += `   Magic Link: ${result.hasMagicLink ? 'Yes' : 'No'}\n`;
                 }
                 content += '\n';
             });
 
-            // Add summary at the end
-            content += '\n' + '='.repeat(50) + '\n';
-            content += 'SUMMARY\n';
-            content += '='.repeat(50) + '\n';
-            content += `Total Exported: ${resultsToExport.length}\n`;
-            
-            if (type === 'all') {
-                const successCount = resultsToExport.filter(r => r.success).length;
-                const failedCount = resultsToExport.filter(r => !r.success).length;
-                content += `Successful: ${successCount}\n`;
-                content += `Failed: ${failedCount}\n`;
-                content += `Success Rate: ${((successCount / resultsToExport.length) * 100).toFixed(1)}%\n`;
-            }
-
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-
-            this.showToast('success', `${type.charAt(0).toUpperCase() + type.slice(1)} results exported successfully`);
+            const filename = `wordpress-success-${new Date().toISOString().split('T')[0]}.txt`;
+            this.downloadFile(content, filename, 'text/plain');
+            this.showToast('success', 'Successful changes exported successfully');
         } catch (error) {
             console.error('Export error:', error);
-            this.showToast('error', 'Failed to export results');
+            this.showToast('error', 'Failed to export successful changes');
         }
+    }
+
+    /**
+     * Export failed changes to TXT (matching index.js pattern)
+     */
+    exportFailedToTxt() {
+        if (this.failedChanges.length === 0) {
+            this.showToast('error', 'No failed changes to export');
+            return;
+        }
+
+        try {
+            const failedDomains = this.failedChanges.map(result => result.domain).join('\n');
+            const filename = `wordpress-failed-domains-${new Date().toISOString().split('T')[0]}.txt`;
+            
+            this.downloadFile(failedDomains, filename, 'text/plain');
+            this.showToast('success', 'Failed domains list exported successfully');
+        } catch (error) {
+            console.error('Export error:', error);
+            this.showToast('error', 'Failed to export failed changes');
+        }
+    }
+
+    /**
+     * Format export content (helper method)
+     */
+    formatExportContent(resultsToExport, title, type) {
+        let content = `${title}\n`;
+        content += '='.repeat(title.length) + '\n\n';
+        content += `Export Date: ${new Date().toLocaleString()}\n`;
+        content += `Total Results: ${resultsToExport.length}\n`;
+        
+        if (type === 'all') {
+            const successCount = this.processResults.filter(r => r.success).length;
+            const failedCount = this.processResults.filter(r => !r.success).length;
+            content += `Successful: ${successCount}\n`;
+            content += `Failed: ${failedCount}\n`;
+        }
+        
+        content += '\n';
+
+        resultsToExport.forEach((result, index) => {
+            content += `${index + 1}. Domain: ${result.domain}\n`;
+            content += `   Status: ${result.success ? 'SUCCESS' : 'FAILED'}\n`;
+            
+            if (result.success) {
+                content += `   cPanel User: ${result.cpanelUser || 'N/A'}\n`;
+                content += `   WP Admin User: ${result.wpUser || 'N/A'}\n`;
+                content += `   WP Admin Email: ${result.wpEmail || `admin@${result.domain}`}\n`;
+                content += `   New Password: ${result.newPassword || result.newWpPassword || 'N/A'}\n`;
+                if (result.loginUrl) {
+                    content += `   Login URL: ${result.loginUrl}\n`;
+                    content += `   Magic Link: ${result.hasMagicLink ? 'Yes' : 'No'}\n`;
+                }
+            } else {
+                content += `   Error: ${result.error || 'Unknown error'}\n`;
+                if (result.cpanelUser) {
+                    content += `   cPanel User: ${result.cpanelUser}\n`;
+                }
+            }
+            content += '\n';
+        });
+
+        // Add summary at the end
+        content += '\n' + '='.repeat(50) + '\n';
+        content += 'SUMMARY\n';
+        content += '='.repeat(50) + '\n';
+        content += `Total Exported: ${resultsToExport.length}\n`;
+        
+        if (type === 'all') {
+            const successCount = resultsToExport.filter(r => r.success).length;
+            const failedCount = resultsToExport.filter(r => !r.success).length;
+            content += `Successful: ${successCount}\n`;
+            content += `Failed: ${failedCount}\n`;
+            content += `Success Rate: ${((successCount / resultsToExport.length) * 100).toFixed(1)}%\n`;
+        }
+
+        return content;
+    }
+
+    /**
+     * Download file helper method (matching index.js pattern)
+     */
+    downloadFile(content, filename, type = 'text/plain') {
+        const blob = new Blob([content], { type });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
     }
 
     /**
@@ -1382,6 +1508,40 @@ class WordPressAdminChanger {
                 }, 300);
             }
         }, duration);
+    }
+
+    /**
+     * Clear successful changes list (matching index.js pattern)
+     */
+    clearSuccessfulChangesList() {
+        this.successfulChanges = [];
+        if (this.elements.successfulChangesSection) {
+            this.elements.successfulChangesSection.classList.add('hidden');
+        }
+        if (this.elements.successfulChangesList) {
+            this.elements.successfulChangesList.innerHTML = '';
+        }
+        if (this.elements.successfulChangesCount) {
+            this.elements.successfulChangesCount.textContent = '0';
+        }
+        this.showToast('info', 'Successful changes list cleared');
+    }
+
+    /**
+     * Clear failed changes list (matching index.js pattern)
+     */
+    clearFailedChangesList() {
+        this.failedChanges = [];
+        if (this.elements.failedChangesSection) {
+            this.elements.failedChangesSection.classList.add('hidden');
+        }
+        if (this.elements.failedChangesList) {
+            this.elements.failedChangesList.innerHTML = '';
+        }
+        if (this.elements.failedChangesCount) {
+            this.elements.failedChangesCount.textContent = '0';
+        }
+        this.showToast('info', 'Failed changes list cleared');
     }
 }
 
