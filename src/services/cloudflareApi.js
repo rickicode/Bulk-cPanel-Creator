@@ -74,7 +74,7 @@ class CloudflareApi {
       const thirdLastPart = parts[parts.length - 3];
       
       // Common two-part TLDs
-      const twoPartTlds = ['co.uk', 'co.id', 'my.id', 'biz.id', 'web.id', 'com.au', 'co.za', 'org.uk'];
+      const twoPartTlds = ['co.uk', 'co.id', 'my.id', 'biz.id', , 'in.net', 'web.id', 'com.au', 'co.za', 'org.uk'];
       const currentTld = `${secondLastPart}.${lastPart}`;
       
       if (twoPartTlds.includes(currentTld)) {

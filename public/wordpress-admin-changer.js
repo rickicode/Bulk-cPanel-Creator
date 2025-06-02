@@ -485,13 +485,8 @@ class WordPressAdminChanger {
         this.validationResults = null;
         this.updateStartButtonState();
         
-        // Clear previous process data
-        if (this.currentProcessId || this.successfulChanges.length > 0) {
-            this.clearPreviousData();
-            this.showToast('info', 'Domains and previous data cleared');
-        } else {
-            this.showToast('info', 'Domains cleared');
-        }
+        // Don't clear previous process data when clearing domains
+        this.showToast('info', 'Domains cleared');
         
         this.saveFormData();
     }
@@ -518,8 +513,11 @@ class WordPressAdminChanger {
             return;
         }
 
-        // Clear previous data before starting new process
-        this.clearPreviousData();
+        // Don't clear previous data - let the counters accumulate
+        // Only reset process state without clearing UI counters
+        this.currentProcessId = null;
+        this.isProcessing = false;
+        this.lastLogCount = 0;
 
         this.showLoading('Starting WordPress admin change...');
         
@@ -862,7 +860,7 @@ class WordPressAdminChanger {
             this.elements.progressFill.style.width = `${percentage}%`;
         }
 
-        // Update stats
+        // Update stats normally - let the backend data drive the display
         if (this.elements.processedCount) this.elements.processedCount.textContent = processed;
         if (this.elements.successCount) this.elements.successCount.textContent = successful;
         if (this.elements.failedCount) this.elements.failedCount.textContent = failed;
@@ -1144,10 +1142,7 @@ class WordPressAdminChanger {
         this.successfulChanges = [];
         this.processResults = [];
 
-        // Hide UI sections
-        if (this.elements.monitorSection) {
-            this.elements.monitorSection.classList.add('hidden');
-        }
+        // DON'T hide monitor section - keep progress visible
         if (this.elements.resultsSection) {
             this.elements.resultsSection.classList.add('hidden');
         }
@@ -1163,22 +1158,18 @@ class WordPressAdminChanger {
         if (this.elements.progressPercentage) this.elements.progressPercentage.textContent = '0%';
         if (this.elements.progressFill) this.elements.progressFill.style.width = '0%';
 
-        // Reset stats
-        if (this.elements.processedCount) this.elements.processedCount.textContent = '0';
-        if (this.elements.successCount) this.elements.successCount.textContent = '0';
-        if (this.elements.failedCount) this.elements.failedCount.textContent = '0';
-        if (this.elements.skippedCount) this.elements.skippedCount.textContent = '0';
-        
-        // Reset results counters
-        if (this.elements.successfulChangesCount) this.elements.successfulChangesCount.textContent = '0';
-        if (this.elements.failedChangesCount) this.elements.failedChangesCount.textContent = '0';
-        if (this.elements.successResultsCount) this.elements.successResultsCount.textContent = '0 domains';
-        if (this.elements.failedResultsCount) this.elements.failedResultsCount.textContent = '0 domains';
+        // DON'T reset progress counters - let them accumulate across sessions
+        // DON'T reset results counters - preserve the counts
 
-        // Clear logs
-        if (this.elements.logsContent) {
-            this.elements.logsContent.innerHTML = '';
+        // Clear results lists only
+        if (this.elements.successResultsList) {
+            this.elements.successResultsList.innerHTML = '';
         }
+        if (this.elements.failedResultsList) {
+            this.elements.failedResultsList.innerHTML = '';
+        }
+
+        // DON'T clear logs - keep for debugging and history
 
         // Update button states
         this.updateStartButtonState();
