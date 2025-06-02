@@ -245,6 +245,11 @@ class BulkCreatorApp {
             this.exportAccountsToCsv();
         });
 
+        // Clear successful accounts event listener
+        document.getElementById('clearSuccessfulAccountsBtn').addEventListener('click', () => {
+            this.clearSuccessfulAccountsList();
+        });
+
         // Skipped domains event listeners
         document.getElementById('exportSkippedTxt').addEventListener('click', () => this.exportSkippedToTxt());
         document.getElementById('exportSkippedCsv').addEventListener('click', () => this.exportSkippedToCsv());
@@ -913,10 +918,10 @@ class BulkCreatorApp {
         this.validationResults = null;
         this.updateStartButtonState();
         
-        // Clear previous bulk creation data
+        // Clear previous bulk creation data (including successful accounts when clearing domains)
         if (this.currentProcessId || this.successfulAccounts.length > 0) {
-            this.clearPreviousData();
-            this.showToast('info', 'Domains and previous data cleared');
+            this.clearAllPreviousData();
+            this.showToast('info', 'Domains and all previous data cleared');
         } else {
             this.showToast('info', 'Domains cleared');
         }
@@ -1413,9 +1418,45 @@ class BulkCreatorApp {
     }
 
     /**
-     * Clear all previous data before starting new bulk creation
+     * Clear previous data before starting new bulk creation (preserves successful accounts)
      */
     clearPreviousData() {
+        // Clear skipped domains
+        this.clearSkippedDomainsList();
+        
+        // Clear failed accounts
+        this.clearFailedAccountsList();
+        
+        // Clear DNS errors
+        this.clearDnsErrorsList();
+        
+        // Reset progress bar
+        this.updateProgress(0, 0, 'Initializing...');
+        
+        // Reset statistics counters (but preserve successful accounts count)
+        this.elements.processedCount.textContent = '0';
+        this.elements.failedCount.textContent = '0';
+        this.elements.skippedCount.textContent = '0';
+        // Note: successCount is preserved to keep showing existing successful accounts
+        
+        // Clear logs
+        this.elements.logsContent.innerHTML = '';
+        
+        // Hide monitor section initially
+        this.elements.monitorSection.classList.add('hidden');
+        
+        // Reset process state
+        this.currentProcessId = null;
+        this.lastLogCount = 0;
+        
+        // Show toast notification
+        this.showToast('info', 'Starting new bulk creation (preserving successful accounts)...');
+    }
+
+    /**
+     * Clear all previous data including successful accounts (for complete reset)
+     */
+    clearAllPreviousData() {
         // Clear successful accounts
         this.clearSuccessfulAccountsList();
         
@@ -1451,7 +1492,7 @@ class BulkCreatorApp {
         this.lastLogCount = 0;
         
         // Show toast notification
-        this.showToast('info', 'Previous data cleared. Starting fresh...');
+        this.showToast('info', 'All previous data cleared. Starting fresh...');
     }
 
     /**
