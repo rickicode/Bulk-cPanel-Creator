@@ -523,13 +523,19 @@ class WordPressAdminChanger {
             const result = await response.json();
 
             if (result.success) {
+                console.log('Process started successfully:', result);
                 this.currentProcessId = result.processId;
                 this.isProcessing = true;
                 this.lastLogCount = 0;
                 
+                console.log('Process ID set to:', this.currentProcessId);
+                
                 // Show monitoring section
                 if (this.elements.monitorSection) {
+                    console.log('Showing monitor section');
                     this.elements.monitorSection.classList.remove('hidden');
+                } else {
+                    console.log('Monitor section element not found!');
                 }
                 if (this.elements.startChangingBtn) {
                     this.elements.startChangingBtn.disabled = true;
@@ -539,6 +545,7 @@ class WordPressAdminChanger {
                 }
                 
                 // Start polling for updates
+                console.log('About to start polling...');
                 this.startPolling();
                 
                 this.showToast('success', `WordPress change started! Process ID: ${result.processId}`);
@@ -610,13 +617,16 @@ class WordPressAdminChanger {
      */
     startPolling() {
         if (!this.currentProcessId || this.pollingInterval) {
+            console.log('Polling not started:', { currentProcessId: this.currentProcessId, pollingInterval: this.pollingInterval });
             return;
         }
 
+        console.log('Starting polling for process:', this.currentProcessId);
         this.addLog('info', `Starting polling every ${this.pollingFrequency}ms for process updates`);
 
         this.pollingInterval = setInterval(async () => {
             try {
+                console.log('Polling tick - fetching status and logs...');
                 await this.pollProcessStatus();
                 await this.pollProcessLogs();
             } catch (error) {
@@ -640,18 +650,27 @@ class WordPressAdminChanger {
      * Poll process status
      */
     async pollProcessStatus() {
-        if (!this.currentProcessId) return;
+        if (!this.currentProcessId) {
+            console.log('No current process ID, skipping status poll');
+            return;
+        }
 
         try {
+            console.log('Fetching status for process:', this.currentProcessId);
             const response = await fetch(`/api/process/${this.currentProcessId}/status`);
             const result = await response.json();
+            
+            console.log('Status response:', { status: response.status, result });
 
             if (result.success && result.data) {
                 this.handleProcessStatus(result.data);
             } else if (response.status === 404) {
                 // Process not found, stop polling
+                console.log('Process not found (404), stopping polling');
                 this.stopPolling();
                 this.addLog('warn', 'Process not found, stopped polling');
+            } else {
+                console.log('Status response not successful:', result);
             }
         } catch (error) {
             console.error('Failed to poll process status:', error);
@@ -699,6 +718,7 @@ class WordPressAdminChanger {
      * Handle process status update
      */
     handleProcessStatus(data) {
+        console.log('handleProcessStatus received:', data);
         this.updateProgress(data);
 
         if (data.status === 'completed') {
@@ -725,9 +745,37 @@ class WordPressAdminChanger {
         this.addLog('success', 'WordPress admin change process completed!');
 
         // Update successful changes
-        if (data.results && data.results.results) {
-            this.successfulChanges = data.results.results.filter(result => result.success);
-            this.displayResults(data.results.results);
+        if (data.results) {
+            // Handle both data.results (array) and data.results.results (nested object) formats
+            const results = Array.isArray(data.results) ? data.results : (data.results.results || []);
+            if (results.length > 0) {
+                this.successfulChanges = results.filter(result => result.success);
+                this.displayResults(results);
+            } else {
+                this.addLog('warn', 'Process completed but no results found to display');
+                // Still show results section with empty state
+                if (this.elements.resultsSection) {
+                    this.elements.resultsSection.classList.remove('hidden');
+                    if (this.elements.successfulChangesCount) {
+                        this.elements.successfulChangesCount.textContent = '0';
+                    }
+                    if (this.elements.resultsList) {
+                        this.elements.resultsList.innerHTML = '<div class="no-results-message">No results to display. Check the logs for more information.</div>';
+                    }
+                }
+            }
+        } else {
+            this.addLog('warn', 'No results data received from server');
+            // Still show results section with error message
+            if (this.elements.resultsSection) {
+                this.elements.resultsSection.classList.remove('hidden');
+                if (this.elements.successfulChangesCount) {
+                    this.elements.successfulChangesCount.textContent = '0';
+                }
+                if (this.elements.resultsList) {
+                    this.elements.resultsList.innerHTML = '<div class="no-results-message">No results data received from server. Check the logs for more information.</div>';
+                }
+            }
         }
 
         this.showToast('success', 'WordPress change completed!');
@@ -757,20 +805,28 @@ class WordPressAdminChanger {
      * Update progress display
      */
     updateProgress(data) {
+        // Progress data is nested in data.progress from processStateManager
+        const progress = data.progress || data;
+        
+        console.log('updateProgress called with data:', data);
+        console.log('Extracted progress:', progress);
+        
         // Handle both old structure (data.stats) and new structure (direct properties)
-        const total = data.total || (data.stats && data.stats.total) || 0;
-        const processed = data.current || (data.stats && data.stats.processed) || 0;
-        const successful = data.successful || (data.stats && data.stats.successful) || 0;
-        const failed = data.failed || (data.stats && data.stats.failed) || 0;
-        const skipped = data.skipped || (data.stats && data.stats.skipped) || 0;
+        const total = progress.total || (progress.stats && progress.stats.total) || 0;
+        const processed = progress.current || (progress.stats && progress.stats.processed) || 0;
+        const successful = progress.successful || (progress.stats && progress.stats.successful) || 0;
+        const failed = progress.failed || (progress.stats && progress.stats.failed) || 0;
+        const skipped = progress.skipped || (progress.stats && progress.stats.skipped) || 0;
 
         const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
 
+        console.log('Progress values:', { total, processed, successful, failed, skipped, percentage });
+
         // Update progress bar
         if (this.elements.progressText) {
-            const currentItem = data.currentItem || data.currentDomain;
+            const currentItem = progress.currentItem || progress.currentDomain;
             this.elements.progressText.textContent = currentItem ?
-                `Processing: ${currentItem}` : 'Processing...';
+                `Processing: ${currentItem}` : (processed > 0 ? `Processing... (${processed}/${total})` : 'Processing...');
         }
         if (this.elements.progressPercentage) {
             this.elements.progressPercentage.textContent = `${percentage}%`;
@@ -790,7 +846,9 @@ class WordPressAdminChanger {
      * Display results
      */
     displayResults(results) {
-        if (!results || results.length === 0) return;
+        if (!results || results.length === 0) {
+            return;
+        }
 
         const successfulResults = results.filter(r => r.success);
         
@@ -853,6 +911,81 @@ class WordPressAdminChanger {
         if (this.elements.resultsSection) {
             this.elements.resultsSection.classList.remove('hidden');
         }
+    }
+
+    /**
+     * Debug function to check if all elements are properly initialized
+     */
+    debugElementCheck() {
+        console.log('=== Element Check ===');
+        Object.keys(this.elements).forEach(key => {
+            const element = this.elements[key];
+            console.log(`${key}:`, element ? 'Found' : 'NOT FOUND');
+        });
+        console.log('=== End Element Check ===');
+    }
+
+    /**
+     * Test function to manually update progress (for debugging)
+     */
+    testProgress() {
+        console.log('Testing progress update...');
+        
+        // Show monitor section first
+        if (this.elements.monitorSection) {
+            this.elements.monitorSection.classList.remove('hidden');
+        }
+        
+        // Test progress data
+        const testProgressData = {
+            progress: {
+                current: 3,
+                total: 10,
+                successful: 2,
+                failed: 1,
+                skipped: 0,
+                currentItem: 'test-domain.com',
+                status: 'processing'
+            }
+        };
+        
+        this.updateProgress(testProgressData);
+    }
+
+    /**
+     * Test function to manually display sample results (for debugging)
+     */
+    testDisplayResults() {
+        const sampleResults = [
+            {
+                domain: 'test1.com',
+                success: true,
+                cpanelUser: 'testuser1',
+                wpUser: 'admin',
+                wpEmail: 'admin@test1.com',
+                newPassword: 'newpass123',
+                loginUrl: 'https://test1.com/wp-admin/',
+                hasMagicLink: false
+            },
+            {
+                domain: 'test2.com',
+                success: true,
+                cpanelUser: 'testuser2',
+                wpUser: 'administrator',
+                wpEmail: 'admin@test2.com',
+                newPassword: 'newpass456',
+                loginUrl: 'https://test2.com/wp-admin/?login_key=abc123',
+                hasMagicLink: true
+            },
+            {
+                domain: 'test3.com',
+                success: false,
+                error: 'WordPress not found'
+            }
+        ];
+
+        console.log('Testing displayResults with sample data...');
+        this.displayResults(sampleResults);
     }
 
     /**
@@ -1079,4 +1212,23 @@ class WordPressAdminChanger {
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.wordpressChanger = new WordPressAdminChanger();
+    
+    // Add test functions to window for debugging
+    window.testWordPressResults = () => {
+        if (window.wordpressChanger) {
+            window.wordpressChanger.testDisplayResults();
+        }
+    };
+    
+    window.debugWordPressElements = () => {
+        if (window.wordpressChanger) {
+            window.wordpressChanger.debugElementCheck();
+        }
+    };
+    
+    window.testWordPressProgress = () => {
+        if (window.wordpressChanger) {
+            window.wordpressChanger.testProgress();
+        }
+    };
 });
