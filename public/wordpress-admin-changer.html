@@ -340,20 +340,27 @@
                     </svg>
                     Change Results
                 </h2>
-                <p class="section-description">Domains with successfully changed WordPress admin credentials</p>
+                <p class="section-description">WordPress admin password change results summary</p>
             </div>
             
-            <!-- Summary Card -->
-            <div class="accounts-summary">
-                <div class="summary-card">
+            <!-- Summary Cards -->
+            <div class="results-summary">
+                <div class="summary-card success-summary">
                     <div class="summary-icon">✓</div>
                     <div class="summary-info">
                         <div class="summary-count" id="successfulChangesCount">0</div>
-                        <div class="summary-label">Successful Domains</div>
+                        <div class="summary-label">Successful</div>
+                    </div>
+                </div>
+                <div class="summary-card failed-summary">
+                    <div class="summary-icon">✗</div>
+                    <div class="summary-info">
+                        <div class="summary-count" id="failedChangesCount">0</div>
+                        <div class="summary-label">Failed</div>
                     </div>
                 </div>
                 <div class="summary-actions">
-                    <button id="exportResultsBtn" class="btn btn-primary">
+                    <button id="exportSuccessBtn" class="btn btn-success">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
                             <path d="M14 2v6h6"/>
@@ -361,12 +368,58 @@
                             <path d="M16 17H8"/>
                             <path d="M10 9H8"/>
                         </svg>
-                        Export Results
+                        Export Success
+                    </button>
+                    <button id="exportFailedBtn" class="btn btn-danger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M16 13H8"/>
+                            <path d="M16 17H8"/>
+                            <path d="M10 9H8"/>
+                        </svg>
+                        Export Failed
+                    </button>
+                    <button id="exportAllBtn" class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                            <path d="M14 2v6h6"/>
+                            <path d="M16 13H8"/>
+                            <path d="M16 17H8"/>
+                            <path d="M10 9H8"/>
+                        </svg>
+                        Export All
                     </button>
                 </div>
             </div>
             
-            <div id="resultsList" class="accounts-list"></div>
+            <!-- Success Results -->
+            <div id="successResultsSection" class="results-section-container hidden">
+                <div class="results-section-header">
+                    <h3 class="results-section-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Successful Changes
+                    </h3>
+                    <span id="successResultsCount" class="results-count">0 domains</span>
+                </div>
+                <div id="successResultsList" class="accounts-list"></div>
+            </div>
+
+            <!-- Failed Results -->
+            <div id="failedResultsSection" class="results-section-container hidden">
+                <div class="results-section-header">
+                    <h3 class="results-section-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                        </svg>
+                        Failed Changes
+                    </h3>
+                    <span id="failedResultsCount" class="results-count">0 domains</span>
+                </div>
+                <div id="failedResultsList" class="accounts-list"></div>
+            </div>
         </section>
     </div>
 

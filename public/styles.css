@@ -1141,7 +1141,6 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--spacing-2xl);
-    max-height: 500px;
     overflow-y: auto;
     box-shadow: var(--shadow-xs);
 }
@@ -1974,4 +1973,161 @@ body {
     font-size: var(--font-sm);
     color: var(--text-secondary);
     line-height: 1.5;
+}
+/* Results Section Styles */
+.results-summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: var(--spacing-lg);
+    align-items: center;
+    margin-bottom: var(--spacing-2xl);
+    padding: var(--spacing-xl);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.summary-card.success-summary {
+    background: linear-gradient(135deg, var(--success-light), rgba(16, 185, 129, 0.1));
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.summary-card.failed-summary {
+    background: linear-gradient(135deg, var(--danger-light), rgba(239, 68, 68, 0.1));
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.summary-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.results-section-container {
+    margin-bottom: var(--spacing-2xl);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.results-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-lg) var(--spacing-xl);
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--border);
+}
+
+.results-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: var(--font-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.results-section-title svg {
+    width: 18px;
+    height: 18px;
+}
+
+#successResultsSection .results-section-title svg {
+    color: var(--success-color);
+}
+
+#failedResultsSection .results-section-title svg {
+    color: var(--danger-color);
+}
+
+.results-count {
+    font-size: var(--font-sm);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.account-card.success {
+    border-left: 4px solid var(--success-color);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(16, 185, 129, 0.02));
+}
+
+.account-card.failed {
+    border-left: 4px solid var(--danger-color);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(239, 68, 68, 0.02));
+}
+
+.account-status.status-success {
+    background: var(--success-color);
+    color: white;
+}
+
+.account-status.status-error {
+    background: var(--danger-color);
+    color: white;
+}
+
+.detail-row.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: var(--radius);
+    padding: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+}
+
+.detail-row.error .detail-value {
+    color: #fca5a5;
+    font-weight: 500;
+}
+
+.no-results-message {
+    text-align: center;
+    padding: var(--spacing-3xl);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Button variants for export */
+.btn.btn-success {
+    background: var(--success-color);
+    color: white;
+    border: 1px solid var(--success-color);
+}
+
+.btn.btn-success:hover {
+    background: var(--success-hover);
+    border-color: var(--success-hover);
+    transform: translateY(-1px);
+}
+
+.btn.btn-danger {
+    background: var(--danger-color);
+    color: white;
+    border: 1px solid var(--danger-color);
+}
+
+.btn.btn-danger:hover {
+    background: var(--danger-hover);
+    border-color: var(--danger-hover);
+    transform: translateY(-1px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .results-summary {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+    }
+    
+    .summary-actions {
+        justify-content: center;
+    }
+    
+    .results-section-header {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        align-items: flex-start;
+    }
 }
