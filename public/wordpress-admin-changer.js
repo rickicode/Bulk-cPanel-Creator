@@ -665,14 +665,30 @@ class WordPressAdminChanger {
         if (!this.currentProcessId) return;
 
         try {
-            const response = await fetch(`/api/process/${this.currentProcessId}/logs?offset=${this.lastLogCount}`);
+            // Use same approach as main app: get all logs with limit, then slice to get new ones
+            const response = await fetch(`/api/process/${this.currentProcessId}/logs?limit=100`);
             const result = await response.json();
-
-            if (result.success && result.data && result.data.length > 0) {
-                result.data.forEach(log => {
-                    this.addLog(log.level, log.message, new Date(log.timestamp));
-                });
-                this.lastLogCount += result.data.length;
+            
+            if (result.success && result.data && result.data.logs) {
+                const allLogs = result.data.logs;
+                
+                // Only process new logs we haven't seen before
+                const newLogs = allLogs.slice(this.lastLogCount);
+                
+                if (newLogs.length > 0) {
+                    newLogs.forEach((log) => {
+                        // Handle both direct log objects and nested log data
+                        const logData = log.data || log;
+                        const level = logData.level || log.level || 'info';
+                        const message = logData.message || log.message || 'No message';
+                        const timestamp = logData.timestamp || log.timestamp || new Date().toISOString();
+                        
+                        this.addLog(level, message, new Date(timestamp));
+                    });
+                    
+                    // Update last log count to total logs seen
+                    this.lastLogCount = allLogs.length;
+                }
             }
         } catch (error) {
             console.error('Failed to poll process logs:', error);

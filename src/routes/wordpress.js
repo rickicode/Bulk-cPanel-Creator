@@ -96,7 +96,24 @@ router.post('/start-changing', async (req, res) => {
         
         const processState = req.processStateManager.startProcess(processId, processInfo);
         
-        // Extended state for WordPress processing
+        // Initialize process with proper data structure for processStateManager
+        req.processStateManager.updateProgress(processId, {
+            status: 'starting',
+            current: 0,
+            total: domainValidation.valid.length,
+            successful: 0,
+            failed: 0,
+            skipped: 0,
+            currentItem: null
+        });
+        
+        // Add initial log message
+        req.processStateManager.addLog(processId, {
+            level: 'info',
+            message: `WordPress admin change process started for ${domainValidation.valid.length} domains`
+        });
+        
+        // Extended state for WordPress processing (local tracking only)
         const wpProcessState = {
             ...processState,
             domains: domainValidation.valid,
@@ -135,38 +152,8 @@ router.post('/start-changing', async (req, res) => {
     }
 });
 
-// Get process status
-router.get('/status/:processId', (req, res) => {
-    try {
-        const { processId } = req.params;
-        const processState = activeProcesses.get(processId);
-        
-        if (!processState) {
-            return res.status(404).json({
-                success: false,
-                error: 'Process not found'
-            });
-        }
-        
-        // Get new logs since last request
-        const newLogs = processState.logs.splice(0);
-        
-        res.json({
-            success: true,
-            data: {
-                ...processState,
-                logs: newLogs
-            }
-        });
-        
-    } catch (error) {
-        logger.error('Status check error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+// Note: Process status is handled by the shared processStateManager via /api/process/:id/status
+// No custom status route needed here
 
 // Stop process
 router.post('/stop/:processId', (req, res) => {
@@ -181,9 +168,15 @@ router.post('/stop/:processId', (req, res) => {
             });
         }
         
-        // Mark process as stopped
-        processState.status = 'stopped';
-        processState.completed = true;
+        // Mark process as cancelled in processStateManager
+        req.processStateManager.updateProgress(processId, {
+            status: 'cancelled'
+        });
+        
+        req.processStateManager.addLog(processId, {
+            level: 'warn',
+            message: 'Process stopped by user request'
+        });
         
         // Close SSH connection if exists
         const ssh = sshConnections.get(processId);
@@ -192,7 +185,7 @@ router.post('/stop/:processId', (req, res) => {
             sshConnections.delete(processId);
         }
         
-        // Clean up
+        // Clean up local state
         activeProcesses.delete(processId);
         
         res.json({

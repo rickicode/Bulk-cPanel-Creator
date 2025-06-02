@@ -206,13 +206,15 @@ class ProcessStateManager {
    */
   getProcessLogs(processId, limit = 100, offset = 0) {
     const logs = this.processLogs.get(processId) || [];
-    const startIndex = Math.max(0, logs.length - limit - offset);
-    const endIndex = logs.length - offset;
+    
+    // For offset-based pagination, return logs starting from offset
+    const startIndex = offset;
+    const endIndex = Math.min(logs.length, offset + limit);
     
     return {
       logs: logs.slice(startIndex, endIndex),
       total: logs.length,
-      hasMore: startIndex > 0
+      hasMore: endIndex < logs.length
     };
   }
 
