@@ -71,7 +71,10 @@ class ProcessStateManager {
     }
 
     // Also log to file
-    logger.log(logEntry.level, `[Process ${processId}] ${logEntry.message}`, logEntry.data);
+    logger.log(logEntry.level, `[Process ${processId}] ${logEntry.message}`, {
+      processId,
+      ...logEntry.data
+    });
   }
 
   /**

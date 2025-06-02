@@ -1166,6 +1166,7 @@ class BulkCreatorApp {
         messageSpan.textContent = message;
         
         logEntry.appendChild(timeSpan);
+        logEntry.appendChild(document.createTextNode(' '));
         logEntry.appendChild(messageSpan);
         
         // Remove JSON data display - data is now formatted in the message itself

@@ -807,7 +807,7 @@ class WordPressAdminChanger {
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">New Password:</span>
-                                <span class="detail-value password-field">${result.newPassword || 'N/A'}</span>
+                                <span class="detail-value password-field">${result.newPassword || result.newWpPassword || 'N/A'}</span>
                             </div>
                             ${result.loginUrl ? `
                             <div class="detail-row">
