@@ -30,6 +30,9 @@ class BulkCreatorApp {
         this.setupEventListeners();
         this.loadFormDefaults();
         
+        // Load saved Cloudflare accounts
+        this.populateCloudflareAccountsDropdown();
+        
         // Debug: Check if skipped domains elements exist
         console.log('Skipped domains section element:', this.elements.skippedDomainsSection);
         console.log('Skipped domains list element:', this.elements.skippedDomainsList);
@@ -54,6 +57,8 @@ class BulkCreatorApp {
             whmPassword: document.getElementById('whmPassword'),
             
             // Cloudflare DNS
+            cfAccountSelect: document.getElementById('cfAccountSelect'),
+            deleteCfAccountBtn: document.getElementById('deleteCfAccountBtn'),
             cfEmail: document.getElementById('cfEmail'),
             cfApiKey: document.getElementById('cfApiKey'),
             cfRecordType: document.getElementById('cfRecordType'),
@@ -196,6 +201,15 @@ class BulkCreatorApp {
         // Button clicks
         this.elements.testConnectionBtn.addEventListener('click', () => {
             this.testWhmConnection();
+        });
+
+        // Cloudflare account management
+        this.elements.cfAccountSelect.addEventListener('change', () => {
+            this.loadSelectedCloudflareAccount();
+        });
+        
+        this.elements.deleteCfAccountBtn.addEventListener('click', () => {
+            this.deleteSelectedCloudflareAccount();
         });
 
         this.elements.testCfConnectionBtn.addEventListener('click', () => {
@@ -736,6 +750,9 @@ class BulkCreatorApp {
                 // Save Cloudflare connection data for future use
                 this.saveCloudflareConnectionData();
                 
+                // Automatically save the account to the saved accounts list (without showing save message)
+                this.saveCurrentCloudflareAccount(false);
+                
                 // Mark Cloudflare as connected
                 this.isCloudflareConnected = true;
             } else {
@@ -1105,7 +1122,7 @@ class BulkCreatorApp {
             
             if (logData.message.includes('already exists')) {
                 reason = 'Domain already exists';
-                code = 'DOMAIN_EXISTS';
+                code = 'DOMAIN_EXISTS_ON_SERVER';
             } else if (logData.message.includes('Cloudflare DNS failed') || logData.message.includes('Skipping') && logData.message.includes('Cloudflare DNS failed')) {
                 reason = logData.data.error || 'Cloudflare DNS failed';
                 code = 'DNS_FAILED';
@@ -1708,7 +1725,7 @@ class BulkCreatorApp {
                 </div>
                 <div class="detail-row">
                     <span class="detail-label">Code:</span>
-                    <span class="detail-value">${skippedData.code || 'DOMAIN_EXISTS'}</span>
+                    <span class="detail-value">${skippedData.code || 'DOMAIN_EXISTS_ON_SERVER'}</span>
                 </div>
                 ${skippedData.code === 'DNS_FAILED' || skippedData.code === 'DNS_ERROR' ? `
                 <div class="detail-row">
@@ -1733,7 +1750,6 @@ class BulkCreatorApp {
         this.skippedDomains = [];
         this.elements.skippedDomainsCount.textContent = '0';
         this.elements.skippedDomainsSection.classList.add('hidden');
-        this.showToast('info', 'Skipped domains list cleared');
     }
 
     /**
@@ -1754,7 +1770,7 @@ class BulkCreatorApp {
             if (index > 0) txtContent += '\n';
             txtContent += `${index + 1}. Domain: ${skipped.domain}\n`;
             txtContent += `   Reason: ${skipped.error || skipped.reason || 'Domain already exists'}\n`;
-            txtContent += `   Code: ${skipped.code || 'DOMAIN_EXISTS'}\n`;
+            txtContent += `   Code: ${skipped.code || 'DOMAIN_EXISTS_ON_SERVER'}\n`;
             
             // Add specific note for DNS-related issues
             if (skipped.code === 'DNS_FAILED' || skipped.code === 'DNS_ERROR') {
@@ -1800,7 +1816,7 @@ class BulkCreatorApp {
             } else if (skipped.code === 'DOMAIN_NOT_IN_CLOUDFLARE') {
                 category = 'Domain Not Found';
                 note = 'Add domain to Cloudflare or disable DNS integration';
-            } else if (skipped.code === 'DOMAIN_EXISTS') {
+            } else if (skipped.code === 'DOMAIN_EXISTS_ON_SERVER') {
                 category = 'Already Exists';
                 note = 'Domain already has a cPanel account';
             }
@@ -1808,7 +1824,7 @@ class BulkCreatorApp {
             rows.push([
                 skipped.domain,
                 skipped.error || skipped.reason || 'Domain already exists',
-                skipped.code || 'DOMAIN_EXISTS',
+                skipped.code || 'DOMAIN_EXISTS_ON_SERVER',
                 category,
                 note
             ]);
@@ -1887,7 +1903,6 @@ class BulkCreatorApp {
         this.failedAccounts = [];
         this.elements.failedAccountsCount.textContent = '0';
         this.elements.failedAccountsSection.classList.add('hidden');
-        this.showToast('info', 'Failed accounts list cleared');
     }
 
     /**
@@ -2023,7 +2038,6 @@ class BulkCreatorApp {
         this.dnsErrors = [];
         this.elements.dnsErrorsCount.textContent = '0';
         this.elements.dnsErrorsSection.classList.add('hidden');
-        this.showToast('info', 'DNS errors list cleared');
     }
 
     /**
@@ -2092,6 +2106,181 @@ class BulkCreatorApp {
         link.click();
         
         this.showToast('success', 'DNS errors exported to CSV');
+    }
+
+    /**
+     * Load saved Cloudflare accounts
+     */
+    loadSavedCloudflareAccounts() {
+        try {
+            const savedAccounts = localStorage.getItem('bulkCreator_cloudflareAccounts');
+            if (savedAccounts) {
+                return JSON.parse(atob(savedAccounts));
+            }
+        } catch (error) {
+            console.warn('Failed to load saved Cloudflare accounts:', error);
+        }
+        return [];
+    }
+
+    /**
+     * Save Cloudflare accounts list
+     */
+    saveCloudflareAccountsList(accounts) {
+        try {
+            const encodedData = btoa(JSON.stringify(accounts));
+            localStorage.setItem('bulkCreator_cloudflareAccounts', encodedData);
+        } catch (error) {
+            console.error('Failed to save Cloudflare accounts:', error);
+        }
+    }
+
+    /**
+     * Populate Cloudflare accounts dropdown
+     */
+    populateCloudflareAccountsDropdown() {
+        const accounts = this.loadSavedCloudflareAccounts();
+        const select = this.elements.cfAccountSelect;
+        
+        // Clear existing options except the first one
+        while (select.options.length > 1) {
+            select.remove(1);
+        }
+        
+        // Add saved accounts
+        accounts.forEach((account, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = `${account.email} (${account.recordType}: ${account.recordValue})`;
+            select.appendChild(option);
+        });
+        
+        // Update button visibility
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Load selected Cloudflare account
+     */
+    loadSelectedCloudflareAccount() {
+        const selectedIndex = this.elements.cfAccountSelect.value;
+        if (selectedIndex === '') {
+            this.updateCloudflareAccountButtons();
+            return;
+        }
+        
+        const accounts = this.loadSavedCloudflareAccounts();
+        const account = accounts[parseInt(selectedIndex)];
+        
+        if (account) {
+            this.elements.cfEmail.value = account.email;
+            this.elements.cfApiKey.value = account.apiKey;
+            this.elements.cfRecordType.value = account.recordType;
+            this.elements.cfRecordValue.value = account.recordValue;
+            
+            // Trigger validation
+            this.validateCloudflareFields();
+            this.toggleCloudflareRecordType();
+            
+            this.showToast('success', `Loaded account: ${account.email}`);
+        }
+        
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Save current Cloudflare account
+     */
+    saveCurrentCloudflareAccount(showMessage = true) {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+        const recordType = this.elements.cfRecordType.value;
+        const recordValue = this.elements.cfRecordValue.value.trim();
+        
+        if (!email || !apiKey) {
+            if (showMessage) {
+                this.showToast('error', 'Please enter email and API key before saving');
+            }
+            return;
+        }
+        
+        const newAccount = {
+            email,
+            apiKey,
+            recordType,
+            recordValue,
+            savedAt: new Date().toISOString()
+        };
+        
+        const accounts = this.loadSavedCloudflareAccounts();
+        
+        // Check if account already exists (by email)
+        const existingIndex = accounts.findIndex(acc => acc.email === email);
+        if (existingIndex !== -1) {
+            // Update existing account
+            accounts[existingIndex] = newAccount;
+            if (showMessage) {
+                this.showToast('success', `Updated account: ${email}`);
+            }
+        } else {
+            // Add new account
+            accounts.push(newAccount);
+            if (showMessage) {
+                this.showToast('success', `Saved new account: ${email}`);
+            }
+        }
+        
+        this.saveCloudflareAccountsList(accounts);
+        this.populateCloudflareAccountsDropdown();
+        
+        // Select the saved account in dropdown
+        const accountIndex = accounts.findIndex(acc => acc.email === email);
+        if (accountIndex !== -1) {
+            this.elements.cfAccountSelect.value = accountIndex;
+        }
+        
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Delete selected Cloudflare account
+     */
+    deleteSelectedCloudflareAccount() {
+        const selectedIndex = this.elements.cfAccountSelect.value;
+        if (selectedIndex === '') {
+            this.showToast('error', 'Please select an account to delete');
+            return;
+        }
+        
+        const accounts = this.loadSavedCloudflareAccounts();
+        const account = accounts[parseInt(selectedIndex)];
+        
+        if (account && confirm(`Delete account: ${account.email}?`)) {
+            accounts.splice(parseInt(selectedIndex), 1);
+            this.saveCloudflareAccountsList(accounts);
+            this.populateCloudflareAccountsDropdown();
+            
+            // Clear form if this was the selected account
+            this.elements.cfAccountSelect.value = '';
+            this.elements.cfEmail.value = '';
+            this.elements.cfApiKey.value = '';
+            this.elements.cfRecordValue.value = '';
+            
+            this.showToast('success', `Deleted account: ${account.email}`);
+            this.validateCloudflareFields();
+        }
+        
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Update Cloudflare account management button visibility
+     */
+    updateCloudflareAccountButtons() {
+        const hasSelectedAccount = this.elements.cfAccountSelect.value !== '';
+        
+        // Show delete button only if account is selected
+        this.elements.deleteCfAccountBtn.style.display = hasSelectedAccount ? 'block' : 'none';
     }
 }
 

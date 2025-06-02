@@ -867,6 +867,22 @@ body {
     grid-column: 1 / -1;
 }
 
+/* Select with action buttons */
+.select-with-action {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.select-with-action select {
+    flex: 1;
+}
+
+.select-with-action .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
 .text-green { color: var(--success-color); }
 .text-red { color: var(--danger-color); }
 .text-yellow { color: var(--warning-color); }

@@ -208,6 +208,18 @@
                             <span class="optional">(Optional)</span>
                         </h3>
                         <div class="form-grid">
+                            <div class="form-field full-width">
+                                <label for="cfAccountSelect">Saved Cloudflare Accounts</label>
+                                <div class="select-with-action">
+                                    <select id="cfAccountSelect">
+                                        <option value="">Select saved account or enter new</option>
+                                    </select>
+                                    <button type="button" id="deleteCfAccountBtn" class="btn btn-outline btn-sm" title="Delete selected account">
+                                        🗑️
+                                    </button>
+                                </div>
+                                <small class="help-text">💡 Accounts are automatically saved when connection test is successful</small>
+                            </div>
                             <div class="form-field">
                                 <label for="cfEmail">Cloudflare Email</label>
                                 <input type="email" id="cfEmail" placeholder="your-email@example.com">

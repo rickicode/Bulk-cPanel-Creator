@@ -238,7 +238,7 @@ class BulkCreator {
           success: false,
           domain,
           error: 'Domain already exists',
-          code: 'DOMAIN_EXISTS'
+          code: 'DOMAIN_EXISTS_ON_SERVER'
         };
 
         processData.results.skipped.push(result);
@@ -248,7 +248,7 @@ class BulkCreator {
         this.processStateManager.addLog(processId, {
           level: 'warn',
           message: `Domain ${domain} already exists, skipping`,
-          data: { domain, skipped: true, error: 'Domain already exists', code: 'DOMAIN_EXISTS' }
+          data: { domain, skipped: true, error: 'Domain already exists', code: 'DOMAIN_EXISTS_ON_SERVER' }
         });
 
         return result;
