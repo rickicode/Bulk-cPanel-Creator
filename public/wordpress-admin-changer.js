@@ -19,6 +19,19 @@ class WordPressAdminChanger {
         this.lastLogCount = 0;
         this.clearDataTimeout = null; // For debouncing clear data action
         
+        // Local progress tracking (independent of backend)
+        this.localProgress = {
+            total: 0,
+            processed: 0,
+            successful: 0,
+            failed: 0,
+            skipped: 0
+        };
+        
+        // Track all processed domains for complete logging
+        this.processedDomains = [];
+        this.currentProcessingDomain = null;
+        
         this.init();
     }
 
@@ -574,6 +587,20 @@ class WordPressAdminChanger {
         // Clear previous data when starting new process (matching index.js pattern)
         this.clearPreviousData();
 
+        // Initialize local progress tracking
+        this.localProgress = {
+            total: this.validationResults.valid.length,
+            processed: 0,
+            successful: 0,
+            failed: 0,
+            skipped: 0
+        };
+        
+        // Initialize tracking variables
+        this.processedDomains = [];
+        this.currentProcessingDomain = null;
+        this.lastProgressUpdate = Date.now();
+
         this.showLoading('Starting WordPress admin change...');
         
         try {
@@ -610,6 +637,9 @@ class WordPressAdminChanger {
                 } else {
                     console.log('Monitor section element not found!');
                 }
+                
+                // Initialize progress display
+                this.updateLocalProgressDisplay();
                 
                 // Update button states
                 this.updateStartButtonState();
@@ -682,7 +712,7 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Start polling for process updates (matching index.js pattern)
+     * Start polling for process updates (enhanced with fallback progress)
      */
     startPolling() {
         if (!this.currentProcessId || this.pollingInterval) {
@@ -693,15 +723,64 @@ class WordPressAdminChanger {
         console.log('Starting polling for process:', this.currentProcessId);
         this.addLog('info', `Starting polling every ${this.pollingFrequency}ms for process updates`);
 
+        // Add a counter to track polling cycles
+        this.pollingCycles = 0;
+        this.lastProgressUpdate = Date.now();
+
         this.pollingInterval = setInterval(async () => {
             try {
-                console.log('Polling tick - fetching status and logs...');
+                this.pollingCycles++;
+                console.log(`Polling cycle ${this.pollingCycles} - fetching status and logs...`);
+                
                 await this.pollProcessStatus();
                 await this.pollProcessLogs();
+                
+                // Fallback: if no progress updates in 30 seconds, force check
+                const timeSinceUpdate = Date.now() - this.lastProgressUpdate;
+                if (timeSinceUpdate > 30000) { // 30 seconds
+                    console.log('⚠️ No progress updates for 30s, forcing status check...');
+                    await this.forceProgressCheck();
+                }
+                
             } catch (error) {
                 console.error('Polling error:', error);
             }
         }, this.pollingFrequency);
+    }
+
+    /**
+     * Force progress check when polling seems stuck
+     */
+    async forceProgressCheck() {
+        try {
+            console.log('🔍 Force checking process progress...');
+            const response = await fetch(`/api/process/${this.currentProcessId}/status`);
+            const result = await response.json();
+            
+            if (result.success && result.data) {
+                console.log('📊 Force check result:', result.data);
+                
+                // If backend shows different progress, update our local tracking
+                const backendProgress = result.data.progress || {};
+                if (backendProgress.successful || backendProgress.failed) {
+                    console.log('🔄 Syncing with backend progress:', backendProgress);
+                    
+                    // Update local progress to match backend if it's ahead
+                    if (backendProgress.successful > this.localProgress.successful) {
+                        this.localProgress.successful = backendProgress.successful;
+                    }
+                    if (backendProgress.failed > this.localProgress.failed) {
+                        this.localProgress.failed = backendProgress.failed;
+                    }
+                    
+                    this.localProgress.processed = this.localProgress.successful + this.localProgress.failed;
+                    this.updateLocalProgressDisplay();
+                    this.lastProgressUpdate = Date.now();
+                }
+            }
+        } catch (error) {
+            console.error('Force progress check failed:', error);
+        }
     }
 
     /**
@@ -738,17 +817,31 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Poll process logs (matching index.js pattern)
+     * Poll process logs (enhanced debugging and error handling)
      */
     async pollProcessLogs() {
-        if (!this.currentProcessId) return;
+        if (!this.currentProcessId) {
+            console.log('No process ID, skipping log poll');
+            return;
+        }
 
         try {
-            const response = await fetch(`/api/process/${this.currentProcessId}/logs?limit=50`);
+            console.log(`Polling logs for process: ${this.currentProcessId}, last count: ${this.lastLogCount}`);
+            const response = await fetch(`/api/process/${this.currentProcessId}/logs?limit=100`);
+            
+            if (!response.ok) {
+                console.error(`Log poll failed with status: ${response.status}`);
+                return;
+            }
+            
             const result = await response.json();
+            console.log('Log poll response:', result);
 
-            if (result.success && result.data.logs) {
+            if (result.success && result.data && result.data.logs) {
+                console.log(`Received ${result.data.logs.length} total logs`);
                 this.handleNewLogs(result.data.logs);
+            } else {
+                console.log('No logs data in response:', result);
             }
         } catch (error) {
             console.error('Failed to poll process logs:', error);
@@ -756,60 +849,200 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Handle new logs from polling (matching index.js pattern)
+     * Handle new logs from polling (enhanced with debugging)
      */
     handleNewLogs(logs) {
+        if (!Array.isArray(logs)) {
+            console.error('Logs is not an array:', logs);
+            return;
+        }
+
         // Only add new logs we haven't seen before
         const newLogs = logs.slice(this.lastLogCount);
+        console.log(`Processing ${newLogs.length} new logs (${this.lastLogCount} -> ${logs.length})`);
+        
         this.lastLogCount = logs.length;
 
-        newLogs.forEach(log => {
+        newLogs.forEach((log, index) => {
+            console.log(`Processing log ${index + 1}/${newLogs.length}:`, log);
             this.handleLog(log);
         });
-    }
-
-    /**
-     * Handle individual log entry (matching index.js pattern)
-     */
-    handleLog(data) {
-        // Extract log data
-        const logData = data.data || data;
-        const level = logData.level || data.level || 'info';
-        const message = logData.message || data.message || 'No message';
-        const timestamp = logData.timestamp || data.timestamp || new Date().toISOString();
         
-        this.addLog(level, message, new Date(timestamp));
-
-        // Handle special log types that update results (matching index.js pattern)
-        if (logData.type === 'wordpress_success' || (logData.success && logData.domain)) {
-            this.addSuccessfulChangeFromLog(logData);
-        } else if (logData.type === 'wordpress_failed' || (logData.success === false && logData.domain)) {
-            this.addFailedChangeFromLog(logData);
+        if (newLogs.length > 0) {
+            console.log('Finished processing new logs, updated counts:', {
+                processed: this.localProgress.processed,
+                successful: this.localProgress.successful,
+                failed: this.localProgress.failed
+            });
         }
     }
 
     /**
-     * Add successful change from log data (matching index.js pattern)
+     * Handle individual log entry (enhanced debugging and robust processing)
+     */
+    handleLog(data) {
+        try {
+            // Extract log data
+            const logData = data.data || data;
+            const level = logData.level || data.level || 'info';
+            const message = logData.message || data.message || 'No message';
+            const timestamp = logData.timestamp || data.timestamp || new Date().toISOString();
+            
+            console.log(`Processing log entry [${level}]: ${message}`);
+            this.addLog(level, message, new Date(timestamp));
+
+            // More comprehensive domain processing detection patterns
+            const domainPatterns = [
+                /Processing domain:\s*([^\s,]+)/i,
+                /Starting WordPress change for:\s*([^\s,]+)/i,
+                /Processing:\s*([^\s,]+)/i,
+                /Working on domain:\s*([^\s,]+)/i,
+                /Checking domain:\s*([^\s,]+)/i
+            ];
+
+            // Track domain processing start
+            for (const pattern of domainPatterns) {
+                const domainMatch = message.match(pattern);
+                if (domainMatch) {
+                    const domain = domainMatch[1];
+                    console.log(`🔄 Detected domain processing start: ${domain}`);
+                    this.handleDomainProcessingStart(domain);
+                    break;
+                }
+            }
+
+            // Handle structured log data first
+            if (logData.type === 'wordpress_success' || (logData.success === true && logData.domain)) {
+                console.log('📝 Processing structured success log:', logData);
+                this.addSuccessfulChangeFromLog(logData);
+            } else if (logData.type === 'wordpress_failed' || (logData.success === false && logData.domain)) {
+                console.log('📝 Processing structured failed log:', logData);
+                this.addFailedChangeFromLog(logData);
+            }
+            
+            // Enhanced success pattern detection
+            const successPatterns = [
+                /WordPress password changed successfully for\s*([^\s,]+)/i,
+                /Successfully updated password for\s*([^\s,]+)/i,
+                /Password changed for\s*([^\s,]+)/i,
+                /Success.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+                /✅.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i
+            ];
+
+            for (const pattern of successPatterns) {
+                const domainMatch = message.match(pattern);
+                if (domainMatch) {
+                    const domain = domainMatch[1];
+                    console.log(`✅ Detected success for domain: ${domain}`);
+                    
+                    const successData = {
+                        domain: domain,
+                        success: true,
+                        cpanelUser: logData.cpanelUser || 'N/A',
+                        wpUser: logData.wpUser || 'admin',
+                        wpEmail: logData.wpEmail || `admin@${domain}`,
+                        newPassword: logData.newPassword || this.elements.newWpPassword.value,
+                        loginUrl: logData.loginUrl || `https://${domain}/wp-admin/`,
+                        hasMagicLink: logData.hasMagicLink || false
+                    };
+                    this.addSuccessfulChange(successData);
+                    break;
+                }
+            }
+
+            // Enhanced failure pattern detection
+            const failurePatterns = [
+                /Failed to change WordPress password for\s*([^\s,]+)/i,
+                /Error.*?password.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+                /Failed.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+                /❌.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+                /Error processing\s*([^\s,]+)/i
+            ];
+
+            for (const pattern of failurePatterns) {
+                const domainMatch = message.match(pattern);
+                if (domainMatch) {
+                    const domain = domainMatch[1];
+                    console.log(`❌ Detected failure for domain: ${domain}`);
+                    
+                    const failedData = {
+                        domain: domain,
+                        success: false,
+                        error: logData.error || message || 'Process failed',
+                        cpanelUser: logData.cpanelUser || 'N/A'
+                    };
+                    this.addFailedChange(failedData);
+                    break;
+                }
+            }
+
+        } catch (error) {
+            console.error('Error processing log entry:', error, data);
+        }
+    }
+
+    /**
+     * Handle domain processing start
+     */
+    handleDomainProcessingStart(domain) {
+        this.currentProcessingDomain = domain;
+        
+        // Add to processed list if not already there
+        if (!this.processedDomains.includes(domain)) {
+            this.processedDomains.push(domain);
+            this.localProgress.processed = this.processedDomains.length;
+            this.updateLocalProgressDisplay();
+        }
+        
+        this.addLog('info', `🔄 Started processing: ${domain}`);
+    }
+
+    /**
+     * Handle domain processing completion
+     */
+    handleDomainProcessingComplete(domain, result) {
+        // Ensure domain is in processed list
+        if (!this.processedDomains.includes(domain)) {
+            this.processedDomains.push(domain);
+            this.localProgress.processed = this.processedDomains.length;
+        }
+        
+        // Update result counters
+        if (result === 'success') {
+            this.localProgress.successful++;
+            this.addLog('success', `✅ Completed successfully: ${domain}`);
+        } else if (result === 'failed') {
+            this.localProgress.failed++;
+            this.addLog('error', `❌ Failed: ${domain}`);
+        }
+        
+        this.updateLocalProgressDisplay();
+    }
+
+    /**
+     * Add successful change from log data (enhanced immediate processing)
      */
     addSuccessfulChangeFromLog(logData) {
         if (!logData.domain) return;
 
         const changeData = {
             domain: logData.domain,
-            cpanelUser: logData.cpanelUser || logData.username,
-            wpUser: logData.wpUser || logData.wpUsername,
-            wpEmail: logData.wpEmail || logData.email,
-            newPassword: logData.newPassword || logData.newWpPassword,
-            loginUrl: logData.loginUrl,
+            cpanelUser: logData.cpanelUser || logData.username || 'N/A',
+            wpUser: logData.wpUser || logData.wpUsername || 'admin',
+            wpEmail: logData.wpEmail || logData.email || `admin@${logData.domain}`,
+            newPassword: logData.newPassword || logData.newWpPassword || this.elements.newWpPassword.value,
+            loginUrl: logData.loginUrl || `https://${logData.domain}/wp-admin/`,
             hasMagicLink: logData.hasMagicLink || false,
             success: true
         };
 
+        // Immediately add and display
         this.addSuccessfulChange(changeData);
+        console.log('Success result added immediately:', changeData);
     }
 
     /**
-     * Add failed change from log data (matching index.js pattern)
+     * Add failed change from log data (enhanced immediate processing)
      */
     addFailedChangeFromLog(logData) {
         if (!logData.domain) return;
@@ -817,57 +1050,176 @@ class WordPressAdminChanger {
         const failedData = {
             domain: logData.domain,
             error: logData.error || logData.message || 'Unknown error',
-            cpanelUser: logData.cpanelUser || logData.username,
+            cpanelUser: logData.cpanelUser || logData.username || 'N/A',
             success: false
         };
 
+        // Immediately add and display
         this.addFailedChange(failedData);
+        console.log('Failed result added immediately:', failedData);
     }
 
     /**
-     * Add successful change (matching index.js pattern)
+     * Add successful change (IMMEDIATE real-time display)
      */
     addSuccessfulChange(changeData) {
         // Avoid duplicates
         if (!this.successfulChanges.some(change => change.domain === changeData.domain)) {
             this.successfulChanges.push(changeData);
             
-            // Update display
+            // Update local progress - but don't double count if already processed
+            if (!this.processedDomains.includes(changeData.domain)) {
+                this.localProgress.successful++;
+                this.processedDomains.push(changeData.domain);
+                this.localProgress.processed = this.processedDomains.length;
+            } else {
+                // Domain already counted in processed, just update success count
+                this.localProgress.successful++;
+            }
+            
+            this.updateLocalProgressDisplay();
+            
+            // IMMEDIATE DISPLAY - Show section and update count immediately
             if (this.elements.successfulChangesCount) {
                 this.elements.successfulChangesCount.textContent = this.successfulChanges.length;
             }
             
-            // Show section if hidden
             if (this.elements.successfulChangesSection) {
                 this.elements.successfulChangesSection.classList.remove('hidden');
             }
             
-            // Update the list display
-            this.displaySuccessfulChanges(this.successfulChanges);
+            // IMMEDIATE CARD ADDITION - Add this specific card immediately
+            this.addSuccessfulChangeCard(changeData);
+            
+            console.log('✅ SUCCESS: Immediately displayed card for:', changeData.domain);
         }
     }
 
     /**
-     * Add failed change (matching index.js pattern)
+     * Add individual successful change card immediately (REAL-TIME)
+     */
+    addSuccessfulChangeCard(result) {
+        if (!this.elements.successfulChangesList) return;
+
+        // Create the card HTML
+        const cardHtml = `
+            <div class="account-card success" id="success-${result.domain.replace(/[^a-zA-Z0-9]/g, '-')}">
+                <div class="account-header">
+                    <div class="account-domain">${result.domain}</div>
+                    <div class="account-status status-success">
+                        ✓ Success
+                    </div>
+                </div>
+                <div class="account-details">
+                    <div class="detail-row">
+                        <span class="detail-label">cPanel User:</span>
+                        <span class="detail-value">${result.cpanelUser || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">WP Admin User:</span>
+                        <span class="detail-value">${result.wpUser || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">WP Admin Email:</span>
+                        <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">New Password:</span>
+                        <span class="detail-value password-field">${result.newPassword || result.newWpPassword || 'N/A'}</span>
+                    </div>
+                    ${result.loginUrl ? `
+                    <div class="detail-row">
+                        <span class="detail-label">Login URL:</span>
+                        <div class="login-link-container">
+                            <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
+                                ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
+                            </a>
+                            <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
+                                📋
+                            </button>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        // Add the card immediately to the top of the list
+        this.elements.successfulChangesList.insertAdjacentHTML('afterbegin', cardHtml);
+        
+        console.log(`🎯 CARD ADDED: ${result.domain} card inserted immediately`);
+    }
+
+    /**
+     * Add failed change (IMMEDIATE real-time display)
      */
     addFailedChange(failedData) {
         // Avoid duplicates
         if (!this.failedChanges.some(change => change.domain === failedData.domain)) {
             this.failedChanges.push(failedData);
             
-            // Update display
+            // Update local progress - but don't double count if already processed
+            if (!this.processedDomains.includes(failedData.domain)) {
+                this.localProgress.failed++;
+                this.processedDomains.push(failedData.domain);
+                this.localProgress.processed = this.processedDomains.length;
+            } else {
+                // Domain already counted in processed, just update failed count
+                this.localProgress.failed++;
+            }
+            
+            this.updateLocalProgressDisplay();
+            
+            // IMMEDIATE DISPLAY - Show section and update count immediately
             if (this.elements.failedChangesCount) {
                 this.elements.failedChangesCount.textContent = this.failedChanges.length;
             }
             
-            // Show section if hidden
             if (this.elements.failedChangesSection) {
                 this.elements.failedChangesSection.classList.remove('hidden');
             }
             
-            // Update the list display
-            this.displayFailedChanges(this.failedChanges);
+            // IMMEDIATE CARD ADDITION - Add this specific failed card immediately
+            this.addFailedChangeCard(failedData);
+            
+            console.log('❌ FAILED: Immediately displayed card for:', failedData.domain);
         }
+    }
+
+    /**
+     * Add individual failed change card immediately (REAL-TIME)
+     */
+    addFailedChangeCard(result) {
+        if (!this.elements.failedChangesList) return;
+
+        // Create the failed card HTML
+        const cardHtml = `
+            <div class="account-card failed" id="failed-${result.domain.replace(/[^a-zA-Z0-9]/g, '-')}">
+                <div class="account-header">
+                    <div class="account-domain">${result.domain}</div>
+                    <div class="account-status status-error">
+                        ✗ Failed
+                    </div>
+                </div>
+                <div class="account-details">
+                    <div class="detail-row error">
+                        <span class="detail-label">Error:</span>
+                        <span class="detail-value">${result.error || 'Unknown error'}</span>
+                    </div>
+                    ${result.cpanelUser ? `
+                    <div class="detail-row">
+                        <span class="detail-label">cPanel User:</span>
+                        <span class="detail-value">${result.cpanelUser}</span>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        // Add the failed card immediately to the top of the list
+        this.elements.failedChangesList.insertAdjacentHTML('afterbegin', cardHtml);
+        
+        console.log(`🎯 FAILED CARD ADDED: ${result.domain} card inserted immediately`);
     }
 
     /**
@@ -944,31 +1296,33 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Update progress display (matching index.js handleProgress pattern)
+     * Update local progress display (enhanced with detailed tracking)
      */
-    updateProgress(data) {
-        // Progress data is nested in data.progress from processStateManager
-        const progress = data.progress || data;
+    updateLocalProgressDisplay() {
+        const { total, processed, successful, failed, skipped } = this.localProgress;
         
-        console.log('updateProgress called with data:', data);
-        console.log('Extracted progress:', progress);
-        
-        // Handle both old structure (data.stats) and new structure (direct properties)
-        const total = progress.total || (progress.stats && progress.stats.total) || 0;
-        const processed = progress.current || (progress.stats && progress.stats.processed) || 0;
-        const successful = progress.successful || (progress.stats && progress.stats.successful) || 0;
-        const failed = progress.failed || (progress.stats && progress.stats.failed) || 0;
-        const skipped = progress.skipped || (progress.stats && progress.stats.skipped) || 0;
-
         const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
 
-        console.log('Progress values:', { total, processed, successful, failed, skipped, percentage });
+        console.log('Local progress values:', {
+            total,
+            processed,
+            successful,
+            failed,
+            skipped,
+            percentage,
+            processedDomains: this.processedDomains.length,
+            currentDomain: this.currentProcessingDomain
+        });
 
-        // Update progress bar
+        // Update progress bar with more detailed info
         if (this.elements.progressText) {
-            const currentItem = progress.currentItem || progress.currentDomain;
-            this.elements.progressText.textContent = currentItem ?
-                `Processing: ${currentItem}` : (processed > 0 ? `Processing... (${processed}/${total})` : 'Processing...');
+            if (this.currentProcessingDomain) {
+                this.elements.progressText.textContent = `Processing: ${this.currentProcessingDomain} (${processed}/${total})`;
+            } else if (processed < total) {
+                this.elements.progressText.textContent = `Processing... (${processed}/${total})`;
+            } else {
+                this.elements.progressText.textContent = 'Processing complete';
+            }
         }
         if (this.elements.progressPercentage) {
             this.elements.progressPercentage.textContent = `${percentage}%`;
@@ -977,11 +1331,33 @@ class WordPressAdminChanger {
             this.elements.progressFill.style.width = `${percentage}%`;
         }
 
-        // Update stats normally - let the backend data drive the display
+        // Update stats with local values
         if (this.elements.processedCount) this.elements.processedCount.textContent = processed;
         if (this.elements.successCount) this.elements.successCount.textContent = successful;
         if (this.elements.failedCount) this.elements.failedCount.textContent = failed;
         if (this.elements.skippedCount) this.elements.skippedCount.textContent = skipped;
+        
+        // Log processed domains for debugging
+        if (this.processedDomains.length > 0) {
+            console.log('Processed domains so far:', this.processedDomains);
+        }
+    }
+
+    /**
+     * Update progress display (now uses local tracking but can still show current item)
+     */
+    updateProgress(data) {
+        // Extract current item being processed for display
+        const progress = data.progress || data;
+        const currentItem = progress.currentItem || progress.currentDomain;
+        
+        // Update progress text with current item if available
+        if (this.elements.progressText && currentItem && this.localProgress.processed < this.localProgress.total) {
+            this.elements.progressText.textContent = `Processing: ${currentItem}`;
+        }
+        
+        // Always use local progress for counts
+        this.updateLocalProgressDisplay();
     }
 
     /**
@@ -1257,6 +1633,19 @@ class WordPressAdminChanger {
         this.successfulChanges = [];
         this.failedChanges = [];
         this.processResults = [];
+
+        // Reset local progress tracking
+        this.localProgress = {
+            total: 0,
+            processed: 0,
+            successful: 0,
+            failed: 0,
+            skipped: 0
+        };
+        
+        // Reset domain tracking
+        this.processedDomains = [];
+        this.currentProcessingDomain = null;
 
         // Hide results sections (matching index.js pattern)
         if (this.elements.successfulChangesSection) {
