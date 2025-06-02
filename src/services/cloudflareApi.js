@@ -74,7 +74,48 @@ class CloudflareApi {
       const thirdLastPart = parts[parts.length - 3];
       
       // Common two-part TLDs
-      const twoPartTlds = ['co.uk', 'co.id', 'my.id', 'biz.id', , 'in.net', 'web.id', 'com.au', 'co.za', 'org.uk'];
+      const twoPartTlds = [
+        'co.uk', 'co.id', 'my.id', 'biz.id', 'in.net', 'web.id', 'com.au', 'co.za', 'org.uk',
+        'ac.id', 'sch.id', 'or.id', 'net.id', 'go.id', 'mil.id', 'ac.uk', 'gov.uk', 'ltd.uk',
+        'plc.uk', 'me.uk', 'net.uk', 'org.za', 'com.sg', 'com.my', 'com.br', 'com.tr', 'com.sa',
+        'com.mx', 'com.ph', 'com.hk', 'com.tw', 'com.cn', 'com.ru', 'com.pl', 'com.ar', 'com.co',
+        'com.pe', 'com.ec', 'com.ve', 'com.uy', 'com.bo', 'com.py', 'com.do', 'com.gt', 'com.ni',
+        'com.pa', 'com.cr', 'com.sv', 'com.hn', 'com.cu', 'com.jo', 'com.lb', 'com.eg', 'com.qa',
+        'com.om', 'com.kw', 'com.bh', 'com.pk', 'com.bd', 'com.lk', 'com.mm', 'com.kh', 'com.vn',
+        'com.th', 'com.sg', 'com.my', 'com.au', 'com.nz', 'com.za', 'co.jp', 'co.kr', 'co.th',
+        'co.in', 'co.il', 'co.nz', 'co.ke', 'co.tz', 'co.ug', 'co.zm', 'co.zw', 'co.mz', 'co.bw',
+        'co.na', 'co.sz', 'co.ls', 'co.mw', 'co.cm', 'co.ao', 'co.ci', 'co.sn', 'co.ma', 'co.tn',
+        'co.dz', 'co.eg', 'co.sd', 'co.ly', 'co.gh', 'co.ng', 'co.sl', 'co.lr', 'co.gm', 'co.bj',
+        'co.tg', 'co.ne', 'co.ml', 'co.bf', 'co.cg', 'co.ga', 'co.gq', 'co.st', 'co.cv', 'co.gw',
+        // European domains
+        'com.de', 'com.fr', 'com.es', 'com.it', 'com.pt', 'com.nl', 'com.be', 'com.at', 'com.ch',
+        'com.se', 'com.no', 'com.dk', 'com.fi', 'com.ie', 'com.gr', 'com.cz', 'com.hu', 'com.ro',
+        'com.bg', 'com.hr', 'com.si', 'com.sk', 'com.lt', 'com.lv', 'com.ee', 'com.mt', 'com.cy',
+        'com.lu', 'com.mc', 'com.ad', 'com.sm', 'com.va', 'com.li', 'co.rs', 'co.me', 'co.ba',
+        'co.mk', 'co.al', 'co.md', 'co.ua', 'co.by', 'co.ge', 'co.am', 'co.az',
+        // Asian domains
+        'com.in', 'com.jp', 'com.kr', 'com.np', 'com.bt', 'com.af', 'com.ir', 'com.iq', 'com.sy',
+        'com.ye', 'com.ae', 'com.il', 'com.ps', 'com.uz', 'com.tm', 'com.tj', 'com.kg', 'com.kz',
+        'com.mn', 'com.la', 'com.bn', 'com.mv', 'com.fj', 'com.to', 'com.ws', 'com.tv', 'com.vu',
+        'com.sb', 'com.pg', 'com.nc', 'com.ki', 'com.nr', 'com.pw', 'com.fm', 'com.mh', 'com.ck',
+        // American domains
+        'com.ca', 'com.us', 'com.pr', 'com.vi', 'com.ag', 'com.ai', 'com.aw', 'com.bb', 'com.bm',
+        'com.bs', 'com.bz', 'com.dm', 'com.gd', 'com.gy', 'com.jm', 'com.kn', 'com.ky', 'com.lc',
+        'com.ms', 'com.tc', 'com.tt', 'com.vc', 'com.vg', 'com.sr', 'com.gf', 'com.gl', 'com.fk',
+        // African domains
+        'com.dz', 'com.ao', 'com.bj', 'com.bw', 'com.bf', 'com.bi', 'com.cm', 'com.cv', 'com.cf',
+        'com.td', 'com.km', 'com.cd', 'com.cg', 'com.ci', 'com.dj', 'com.gq', 'com.er', 'com.et',
+        'com.ga', 'com.gm', 'com.gh', 'com.gn', 'com.gw', 'com.ke', 'com.ls', 'com.lr', 'com.ly',
+        'com.mg', 'com.mw', 'com.ml', 'com.mr', 'com.mu', 'com.ma', 'com.mz', 'com.na', 'com.ne',
+        'com.ng', 'com.rw', 'com.st', 'com.sn', 'com.sc', 'com.sl', 'com.so', 'com.za', 'com.ss',
+        'com.sd', 'com.sz', 'com.tz', 'com.tg', 'com.tn', 'com.ug', 'com.eh', 'com.zm', 'com.zw',
+        // Other common two-part TLDs
+        'org.au', 'net.au', 'edu.au', 'gov.au', 'asn.au', 'id.au', 'org.za', 'net.za', 'edu.za',
+        'gov.za', 'mil.za', 'nom.za', 'ac.za', 'org.uk', 'net.uk', 'gov.uk', 'mod.uk', 'nhs.uk',
+        'police.uk', 'sch.uk', 'co.jp', 'or.jp', 'ne.jp', 'ac.jp', 'ad.jp', 'ed.jp', 'go.jp',
+        'gr.jp', 'lg.jp', 'org.in', 'net.in', 'edu.in', 'nic.in', 'ac.in', 'co.in', 'firm.in',
+        'gen.in', 'ind.in', 'mil.in', 'res.in'
+      ];
       const currentTld = `${secondLastPart}.${lastPart}`;
       
       if (twoPartTlds.includes(currentTld)) {
