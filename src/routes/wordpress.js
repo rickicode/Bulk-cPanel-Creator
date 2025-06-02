@@ -73,12 +73,23 @@ router.post('/start-changing', async (req, res) => {
             });
         }
         
+        // Validate domains first (similar to index page)
+        const { validateDomains } = require('../utils/validator');
+        const domainValidation = validateDomains(domains);
+        
+        if (domainValidation.valid.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No valid domains provided'
+            });
+        }
+        
         const processId = uuidv4();
         
         // Initialize process state
         const processInfo = {
             type: 'wordpress-admin-change',
-            domains,
+            domains: domainValidation.valid, // Use only valid domains
             ssh,
             wordpress
         };
@@ -88,12 +99,12 @@ router.post('/start-changing', async (req, res) => {
         // Extended state for WordPress processing
         const wpProcessState = {
             ...processState,
-            domains,
+            domains: domainValidation.valid,
             processed: 0,
             successful: 0,
             failed: 0,
             skipped: 0,
-            total: domains.length,
+            total: domainValidation.valid.length,
             currentDomain: null,
             results: [],
             logs: [],
@@ -104,12 +115,15 @@ router.post('/start-changing', async (req, res) => {
         activeProcesses.set(processId, wpProcessState);
         
         // Start processing in background
-        processWordPressAdminChanges(processId, ssh, wordpress, domains, req.processStateManager);
+        processWordPressAdminChanges(processId, ssh, wordpress, domainValidation.valid, req.processStateManager);
         
         res.json({
             success: true,
             processId,
-            message: 'WordPress admin changing process started'
+            message: 'WordPress admin changing process started',
+            totalDomains: domainValidation.valid.length,
+            invalidDomains: domainValidation.invalid.length,
+            duplicateDomains: domainValidation.duplicates.length
         });
         
     } catch (error) {
@@ -197,12 +211,24 @@ router.post('/stop/:processId', (req, res) => {
 
 // Main processing function
 async function processWordPressAdminChanges(processId, sshConfig, wpConfig, domains, processStateManager) {
-    const processState = activeProcesses.get(processId);
     const ssh = new NodeSSH();
     
     try {
-        processState.status = 'connecting';
-        addLog(processState, 'Connecting to SSH server...', 'info');
+        // Update process status to connecting
+        processStateManager.updateProgress(processId, {
+            status: 'connecting',
+            currentItem: null,
+            current: 0,
+            total: domains.length,
+            successful: 0,
+            failed: 0,
+            skipped: 0
+        });
+        
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: 'Connecting to SSH server...'
+        });
         
         // Connect to SSH
         await ssh.connect({
@@ -219,64 +245,118 @@ async function processWordPressAdminChanges(processId, sshConfig, wpConfig, doma
         });
         
         sshConnections.set(processId, ssh);
-        addLog(processState, 'SSH connection established', 'success');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: 'SSH connection established'
+        });
         
-        processState.status = 'processing';
+        // Update status to processing
+        processStateManager.updateProgress(processId, {
+            status: 'processing'
+        });
+        
+        const results = [];
+        let processed = 0;
+        let successful = 0;
+        let failed = 0;
         
         // Process each domain
         for (let i = 0; i < domains.length; i++) {
-            if (processState.status === 'stopped') {
-                addLog(processState, 'Process stopped by user', 'warning');
+            const currentProcess = processStateManager.getProcessStatus(processId);
+            if (currentProcess && currentProcess.status === 'cancelled') {
+                processStateManager.addLog(processId, {
+                    level: 'warn',
+                    message: 'Process stopped by user'
+                });
                 break;
             }
             
             const domain = domains[i];
-            processState.currentDomain = domain;
             
-            addLog(processState, `Processing domain: ${domain}`, 'info');
+            // Update current domain
+            processStateManager.updateProgress(processId, {
+                currentItem: domain
+            });
+            
+            processStateManager.addLog(processId, {
+                level: 'info',
+                message: `Processing domain: ${domain}`
+            });
             
             try {
-                const result = await processSingleDomain(ssh, domain, wpConfig, processState);
-                processState.results.push(result);
+                const result = await processSingleDomain(ssh, domain, wpConfig, processStateManager, processId);
+                results.push(result);
                 
                 if (result.success) {
-                    processState.successful++;
-                    addLog(processState, `✓ Successfully changed admin for ${domain}`, 'success');
+                    successful++;
+                    processStateManager.addLog(processId, {
+                        level: 'info',
+                        message: `✓ Successfully changed admin for ${domain}`
+                    });
                 } else {
-                    processState.failed++;
-                    addLog(processState, `✗ Failed to change admin for ${domain}: ${result.error}`, 'error');
+                    failed++;
+                    processStateManager.addLog(processId, {
+                        level: 'error',
+                        message: `✗ Failed to change admin for ${domain}: ${result.error}`
+                    });
                 }
                 
             } catch (error) {
-                processState.failed++;
+                failed++;
                 const errorMsg = `Error processing ${domain}: ${error.message}`;
-                addLog(processState, errorMsg, 'error');
+                processStateManager.addLog(processId, {
+                    level: 'error',
+                    message: errorMsg
+                });
                 
-                processState.results.push({
+                results.push({
                     domain,
                     success: false,
                     error: error.message
                 });
             }
             
-            processState.processed++;
+            processed++;
+            
+            // Update progress
+            processStateManager.updateProgress(processId, {
+                current: processed,
+                total: domains.length,
+                successful,
+                failed,
+                skipped: 0
+            });
             
             // Small delay to prevent overwhelming the server
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
-        processState.status = 'completed';
-        processState.completed = true;
-        processState.currentDomain = null;
+        // Complete process
+        processStateManager.completeProcess(processId, {
+            results,
+            totalProcessed: processed,
+            successful,
+            failed,
+            skipped: 0,
+            totalDomains: domains.length
+        });
         
-        addLog(processState, `Process completed: ${processState.successful} successful, ${processState.failed} failed`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Process completed: ${successful} successful, ${failed} failed`
+        });
         
     } catch (error) {
-        processState.status = 'error';
-        processState.error = error.message;
-        processState.completed = true;
+        processStateManager.failProcess(processId, {
+            message: `Fatal error: ${error.message}`,
+            error: error.message
+        });
         
-        addLog(processState, `Fatal error: ${error.message}`, 'error');
+        processStateManager.addLog(processId, {
+            level: 'error',
+            message: `Fatal error: ${error.message}`
+        });
+        
         logger.error('WordPress admin changing process error:', error);
     } finally {
         // Clean up SSH connection
@@ -284,14 +364,6 @@ async function processWordPressAdminChanges(processId, sshConfig, wpConfig, doma
             ssh.dispose();
         }
         sshConnections.delete(processId);
-        
-        // Clean up process after some time
-        setTimeout(() => {
-            activeProcesses.delete(processId);
-            if (processStateManager) {
-                processStateManager.deleteProcess(processId);
-            }
-        }, 300000); // 5 minutes
     }
 }
 
@@ -302,10 +374,13 @@ function generateRandomEmail(domain) {
 }
 
 // Process single domain
-async function processSingleDomain(ssh, domain, wpConfig, processState) {
+async function processSingleDomain(ssh, domain, wpConfig, processStateManager, processId) {
     try {
         // Step 1: Get cPanel username from domain using WHM API
-        addLog(processState, `Getting cPanel username for ${domain}...`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Getting cPanel username for ${domain}...`
+        });
         
         const cpanelUserCmd = `whmapi1 listaccts | awk '/domain: ${domain}/{found=1} found && /user:/{print $2; exit}'`;
         const cpanelUserResult = await ssh.execCommand(cpanelUserCmd);
@@ -319,16 +394,28 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
             throw new Error('cPanel user not found for domain');
         }
         
-        addLog(processState, `Found cPanel user: ${cpanelUser}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Found cPanel user: ${cpanelUser}`
+        });
         
         // Step 2: Get current WordPress admin username for password change
-        addLog(processState, `Getting WordPress admin username...`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Getting WordPress admin username...`
+        });
         
         const wpUserCmd = `wp user list --path=/home/${cpanelUser}/public_html --role=administrator --field=user_login --allow-root`;
-        addLog(processState, `Running command: ${wpUserCmd}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Running command: ${wpUserCmd}`
+        });
         const wpUserResult = await ssh.execCommand(wpUserCmd);
         
-        addLog(processState, `WP user command result - Code: ${wpUserResult.code}, Output: ${wpUserResult.stdout}, Error: ${wpUserResult.stderr}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `WP user command result - Code: ${wpUserResult.code}, Output: ${wpUserResult.stdout}, Error: ${wpUserResult.stderr}`
+        });
         
         if (wpUserResult.code !== 0) {
             throw new Error(`Failed to get WordPress admin user: ${wpUserResult.stderr}`);
@@ -339,55 +426,94 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
             throw new Error('WordPress admin user not found');
         }
         
-        addLog(processState, `Found WordPress admin: ${oldWpUser}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Found WordPress admin: ${oldWpUser}`
+        });
         
         // Step 3: Get WordPress admin email
-        addLog(processState, `Getting WordPress admin email...`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Getting WordPress admin email...`
+        });
         
         const wpEmailCmd = `wp user get ${oldWpUser} --field=email --path=/home/${cpanelUser}/public_html --allow-root`;
-        addLog(processState, `Running command: ${wpEmailCmd}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Running command: ${wpEmailCmd}`
+        });
         const wpEmailResult = await ssh.execCommand(wpEmailCmd);
         
-        addLog(processState, `Email command result - Code: ${wpEmailResult.code}, Output: ${wpEmailResult.stdout}, Error: ${wpEmailResult.stderr}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Email command result - Code: ${wpEmailResult.code}, Output: ${wpEmailResult.stdout}, Error: ${wpEmailResult.stderr}`
+        });
         
         const wpEmail = wpEmailResult.code === 0 && wpEmailResult.stdout.trim() ?
                        wpEmailResult.stdout.trim() :
                        `admin@${domain}`;
         
-        addLog(processState, `WordPress admin email: ${wpEmail}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `WordPress admin email: ${wpEmail}`
+        });
         
         // Step 4: Update WordPress admin password
-        addLog(processState, `Updating password for WordPress admin user: ${oldWpUser}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Updating password for WordPress admin user: ${oldWpUser}`
+        });
         
         const updatePasswordCmd = `wp user update ${oldWpUser} --user_pass='${wpConfig.newPassword}' --path=/home/${cpanelUser}/public_html --allow-root`;
-        addLog(processState, `Running command: ${updatePasswordCmd.replace(wpConfig.newPassword, '***HIDDEN***')}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Running command: ${updatePasswordCmd.replace(wpConfig.newPassword, '***HIDDEN***')}`
+        });
         const updatePasswordResult = await ssh.execCommand(updatePasswordCmd);
         
-        addLog(processState, `Password update result - Code: ${updatePasswordResult.code}, Output: ${updatePasswordResult.stdout}, Error: ${updatePasswordResult.stderr}`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Password update result - Code: ${updatePasswordResult.code}, Output: ${updatePasswordResult.stdout}, Error: ${updatePasswordResult.stderr}`
+        });
         
         if (updatePasswordResult.code !== 0) {
             throw new Error(`Failed to update WordPress admin password: ${updatePasswordResult.stderr}`);
         }
         
-        addLog(processState, `WordPress admin password updated successfully for user: ${oldWpUser}`, 'success');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `WordPress admin password updated successfully for user: ${oldWpUser}`
+        });
         
         let magicLinkData = null;
         let standardLoginUrl = `https://${domain}/wp-admin/`;
         
         // Step 5: Create magic login link
-        addLog(processState, `Creating magic login link for ${domain}...`, 'info');
+        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Creating magic login link for ${domain}...`
+        });
         
         try {
             // Generate random email with WordPress domain
             const randomEmail = generateRandomEmail(domain);
-            addLog(processState, `Generated random email: ${randomEmail}`, 'info');
+            processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Generated random email: ${randomEmail}`
+        });
             
             // Create temporary login using wp tlwp create command
             const tlwpCreateCmd = `wp tlwp create --email=${randomEmail} --role=administrator --allow-root --path=/home/${cpanelUser}/public_html`;
-            addLog(processState, `Running command: ${tlwpCreateCmd}`, 'info');
+            processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Running command: ${tlwpCreateCmd}`
+        });
             const tlwpResult = await ssh.execCommand(tlwpCreateCmd);
             
-            addLog(processState, `TLWP command result - Code: ${tlwpResult.code}, Output: ${tlwpResult.stdout}, Error: ${tlwpResult.stderr}`, 'info');
+            processStateManager.addLog(processId, {
+            level: 'info',
+            message: `TLWP command result - Code: ${tlwpResult.code}, Output: ${tlwpResult.stdout}, Error: ${tlwpResult.stderr}`
+        });
             
             if (tlwpResult.code === 0 && tlwpResult.stdout.trim()) {
                 // Parse JSON output from wp tlwp create command
@@ -408,21 +534,45 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
                             message: tlwpData.message
                         };
                         
-                        addLog(processState, `✓ Magic login created successfully`, 'success');
-                        addLog(processState, `Magic Username: ${magicLinkData.username}`, 'info');
-                        addLog(processState, `Magic User ID: ${magicLinkData.userId}`, 'info');
-                        addLog(processState, `Expires: ${magicLinkData.expires}`, 'info');
+                        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `✓ Magic login created successfully`
+        });
+                        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Magic Username: ${magicLinkData.username}`
+        });
+                        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Magic User ID: ${magicLinkData.userId}`
+        });
+                        processStateManager.addLog(processId, {
+            level: 'info',
+            message: `Expires: ${magicLinkData.expires}`
+        });
                     } else {
-                        addLog(processState, `Magic link creation failed: ${tlwpData.message || 'Unknown error'}`, 'warning');
+                        processStateManager.addLog(processId, {
+            level: 'warn',
+            message: `Magic link creation failed: ${tlwpData.message || 'Unknown error'}`
+        });
                     }
                 } catch (parseError) {
-                    addLog(processState, `Failed to parse TLWP output as JSON: ${parseError.message}`, 'warning');
+                    processStateManager.addLog(processId, {
+            level: 'warn',
+            message: `Failed to parse TLWP output as JSON: ${parseError.message}`
+        });
                 }
             } else {
-                addLog(processState, `Magic link creation failed: ${tlwpResult.stderr}`, 'warning');
+                processStateManager.addLog(processId, {
+            level: 'warn',
+            message: `Magic link creation failed: ${tlwpResult.stderr}`
+        });
             }
         } catch (error) {
-            addLog(processState, `Magic link creation error: ${error.message}`, 'warning');
+            processStateManager.addLog(processId, {
+            level: 'warn',
+            message: `Magic link creation error: ${error.message}`
+        });
         }
         
         return {
@@ -431,7 +581,7 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
             cpanelUser,
             wpUser: oldWpUser,
             wpEmail: wpEmail,
-            newWpPassword: wpConfig.newPassword,
+            newPassword: wpConfig.newPassword,
             loginUrl: magicLinkData ? magicLinkData.loginUrl : standardLoginUrl,
             hasMagicLink: !!magicLinkData,
             tempUser: magicLinkData ? magicLinkData.username : null,
@@ -449,16 +599,5 @@ async function processSingleDomain(ssh, domain, wpConfig, processState) {
     }
 }
 
-// Helper function to add log
-function addLog(processState, message, level = 'info') {
-    const logEntry = {
-        message,
-        level,
-        timestamp: new Date()
-    };
-    
-    processState.logs.push(logEntry);
-    logger.info(`[${processState.id}] ${message}`);
-}
 
 module.exports = router;

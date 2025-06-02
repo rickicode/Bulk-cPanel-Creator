@@ -545,6 +545,13 @@ class WordPressAdminChanger {
                 this.addLog('info', `WordPress change started - Process ID: ${result.processId}`);
                 this.addLog('info', `Total domains to process: ${result.totalDomains}`);
                 
+                if (result.invalidDomains > 0) {
+                    this.addLog('warn', `${result.invalidDomains} invalid domains will be skipped`);
+                }
+                if (result.duplicateDomains > 0) {
+                    this.addLog('warn', `${result.duplicateDomains} duplicate domains will be skipped`);
+                }
+                
             } else {
                 this.showToast('error', `Failed to start change: ${result.error}`);
                 this.addLog('error', `WordPress change failed: ${result.error}`);
@@ -702,9 +709,9 @@ class WordPressAdminChanger {
         this.addLog('success', 'WordPress admin change process completed!');
 
         // Update successful changes
-        if (data.results) {
-            this.successfulChanges = data.results.filter(result => result.success);
-            this.displayResults(data.results);
+        if (data.results && data.results.results) {
+            this.successfulChanges = data.results.results.filter(result => result.success);
+            this.displayResults(data.results.results);
         }
 
         this.showToast('success', 'WordPress change completed!');
@@ -734,19 +741,20 @@ class WordPressAdminChanger {
      * Update progress display
      */
     updateProgress(data) {
-        const stats = data.stats || {};
-        const total = stats.total || 0;
-        const processed = stats.processed || 0;
-        const successful = stats.successful || 0;
-        const failed = stats.failed || 0;
-        const skipped = stats.skipped || 0;
+        // Handle both old structure (data.stats) and new structure (direct properties)
+        const total = data.total || (data.stats && data.stats.total) || 0;
+        const processed = data.current || (data.stats && data.stats.processed) || 0;
+        const successful = data.successful || (data.stats && data.stats.successful) || 0;
+        const failed = data.failed || (data.stats && data.stats.failed) || 0;
+        const skipped = data.skipped || (data.stats && data.stats.skipped) || 0;
 
         const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
 
         // Update progress bar
         if (this.elements.progressText) {
-            this.elements.progressText.textContent = data.currentDomain ? 
-                `Processing: ${data.currentDomain}` : 'Processing...';
+            const currentItem = data.currentItem || data.currentDomain;
+            this.elements.progressText.textContent = currentItem ?
+                `Processing: ${currentItem}` : 'Processing...';
         }
         if (this.elements.progressPercentage) {
             this.elements.progressPercentage.textContent = `${percentage}%`;
