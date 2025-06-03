@@ -57,6 +57,8 @@ class BulkCreatorApp {
             whmPassword: document.getElementById('whmPassword'),
             
             // Cloudflare DNS
+            skipCloudflare: document.getElementById('skipCloudflare'),
+            cloudflareFields: document.getElementById('cloudflareFields'),
             cfAccountSelect: document.getElementById('cfAccountSelect'),
             deleteCfAccountBtn: document.getElementById('deleteCfAccountBtn'),
             cfEmail: document.getElementById('cfEmail'),
@@ -167,6 +169,12 @@ class BulkCreatorApp {
         });
         
         this.elements.packagePlan.addEventListener('change', () => {
+            this.saveFormData();
+        });
+
+        // Skip Cloudflare checkbox
+        this.elements.skipCloudflare.addEventListener('change', () => {
+            this.toggleCloudflareFields();
             this.saveFormData();
         });
 
@@ -329,6 +337,29 @@ class BulkCreatorApp {
         if (isValid) {
             this.saveCloudflareConnectionData();
         }
+    }
+
+    /**
+     * Toggle Cloudflare fields visibility based on skip checkbox
+     */
+    toggleCloudflareFields() {
+        const skipCloudflare = this.elements.skipCloudflare.checked;
+        
+        if (skipCloudflare) {
+            this.elements.cloudflareFields.style.display = 'none';
+        } else {
+            this.elements.cloudflareFields.style.display = 'grid';
+        }
+        
+        // Clear Cloudflare fields when skipping
+        if (skipCloudflare) {
+            this.elements.cfEmail.value = '';
+            this.elements.cfApiKey.value = '';
+            this.elements.cfRecordValue.value = '';
+            this.elements.cfAccountSelect.value = '';
+        }
+        
+        this.validateCloudflareFields();
     }
 
     /**
@@ -557,6 +588,7 @@ class BulkCreatorApp {
 
         this.toggleAuthMethod();
         this.toggleCloudflareRecordType();
+        this.toggleCloudflareFields();
         
         // Ensure validation runs after data is loaded
         setTimeout(() => {
@@ -581,6 +613,7 @@ class BulkCreatorApp {
             'whmUsername',
             'whmSsl',
             'authMethod',
+            'skipCloudflare',
             'cfEmail',
             'cfRecordType',
             'cfRecordValue'
@@ -949,11 +982,14 @@ class BulkCreatorApp {
                 emailTemplate: this.elements.emailTemplate.value.trim() || 'admin@{domain}'
             };
 
-            // Add Cloudflare credentials if provided
-            const cfEmail = this.elements.cfEmail.value.trim();
-            const cfApiKey = this.elements.cfApiKey.value.trim();
-            if (cfEmail && cfApiKey) {
-                requestData.cloudflareCredentials = this.getCloudflareCredentials();
+            // Add Cloudflare credentials if not skipped and provided
+            const skipCloudflare = this.elements.skipCloudflare.checked;
+            if (!skipCloudflare) {
+                const cfEmail = this.elements.cfEmail.value.trim();
+                const cfApiKey = this.elements.cfApiKey.value.trim();
+                if (cfEmail && cfApiKey) {
+                    requestData.cloudflareCredentials = this.getCloudflareCredentials();
+                }
             }
 
             const response = await fetch('/api/bulk/create', {

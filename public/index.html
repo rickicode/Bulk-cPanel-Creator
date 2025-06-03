@@ -72,7 +72,7 @@
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-.42-.25l-.208-.104a2 2 0 00-.897-.071A7.001 7.001 0 0012 2a7.001 7.001 0 00-2.494 12.45 2 2 0 00-.897.071l-.208.104-.42.25-2.387.477a2 2 0 00-1.022.547C3.83 16.17 3 17.461 3 18.9V21h18v-2.1c0-1.439-.83-2.73-1.572-3.472zM12 4a5 5 0 110 10 5 5 0 010-10z"/>
                                 </svg>
-                                Requires Cloudflare API
+                                Cloudflare API (Optional)
                             </div>
                         </div>
                     </div>
@@ -207,7 +207,17 @@
                             Cloudflare DNS Integration
                             <span class="optional">(Optional)</span>
                         </h3>
-                        <div class="form-grid">
+                        
+                        <!-- Skip Cloudflare Option -->
+                        <div class="form-field full-width">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="skipCloudflare">
+                                <span class="checkbox-text">Skip Cloudflare DNS setup (create accounts without DNS integration)</span>
+                            </label>
+                            <small class="help-text">💡 Check this box to create cPanel accounts without setting up Cloudflare DNS records</small>
+                        </div>
+                        
+                        <div id="cloudflareFields" class="form-grid">
                             <div class="form-field full-width">
                                 <label for="cfAccountSelect">Saved Cloudflare Accounts</label>
                                 <div class="select-with-action">
@@ -249,6 +259,7 @@
                                 </svg>
                                 Test Cloudflare
                             </button>
+                        </div>
                         </div>
                     </div>
                 </div>

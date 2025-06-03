@@ -1065,6 +1065,11 @@ body {
     cursor: pointer;
 }
 
+.checkbox-text {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
 .logs-content {
     background: var(--surface);
     color: var(--text-primary);

@@ -173,7 +173,17 @@
                             Cloudflare DNS Integration
                             <span class="optional">(Optional)</span>
                         </h3>
-                        <div class="form-grid">
+                        
+                        <!-- Skip Cloudflare Option -->
+                        <div class="form-field full-width">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="skipCloudflare">
+                                <span class="checkbox-text">Skip Cloudflare DNS cleanup (delete accounts without removing DNS records)</span>
+                            </label>
+                            <small class="help-text">💡 Check this box to delete cPanel accounts without removing Cloudflare DNS records</small>
+                        </div>
+                        
+                        <div id="cloudflareFields" class="form-grid">
                             <div class="form-field full-width">
                                 <label for="cfAccountSelect">Saved Cloudflare Accounts</label>
                                 <div class="select-with-action">
@@ -214,6 +224,7 @@
                                 </svg>
                                 Test Cloudflare
                             </button>
+                        </div>
                         </div>
                     </div>
                 </div>

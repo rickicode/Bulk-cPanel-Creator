@@ -48,6 +48,8 @@ class CpanelBulkDelete {
             testWhmBtn: document.getElementById('testWhmBtn'),
             
             // Cloudflare Configuration (Optional)
+            skipCloudflare: document.getElementById('skipCloudflare'),
+            cloudflareFields: document.getElementById('cloudflareFields'),
             cfAccountSelect: document.getElementById('cfAccountSelect'),
             deleteCfAccountBtn: document.getElementById('deleteCfAccountBtn'),
             cfEmail: document.getElementById('cfEmail'),
@@ -121,6 +123,12 @@ class CpanelBulkDelete {
         
         // WHM test connection
         this.elements.testWhmBtn.addEventListener('click', () => this.testWhmConnection());
+        
+        // Skip Cloudflare checkbox
+        this.elements.skipCloudflare.addEventListener('change', () => {
+            this.toggleCloudflareFields();
+            this.saveFormData();
+        });
         
         // Cloudflare account management
         this.elements.cfAccountSelect.addEventListener('change', () => this.loadSelectedCloudflareAccount());
@@ -203,6 +211,19 @@ class CpanelBulkDelete {
             console.error('Error loading saved Cloudflare data:', error);
         }
         
+        // Load saved form data including skipCloudflare
+        try {
+            const savedFormData = localStorage.getItem('bulkDelete_formData');
+            if (savedFormData) {
+                const formData = JSON.parse(savedFormData);
+                if (formData.skipCloudflare !== undefined) {
+                    this.elements.skipCloudflare.checked = formData.skipCloudflare;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading saved form data:', error);
+        }
+        
         // Load saved domain list
         try {
             const savedDomains = localStorage.getItem('bulkDelete_domainList');
@@ -213,6 +234,9 @@ class CpanelBulkDelete {
         } catch (error) {
             console.error('Error loading saved domain list:', error);
         }
+        
+        // Initialize toggles
+        this.toggleCloudflareFields();
     }
 
     /**
@@ -223,6 +247,29 @@ class CpanelBulkDelete {
         this.elements.tokenField.classList.toggle('hidden', !isToken);
         this.elements.passwordField.classList.toggle('hidden', isToken);
         this.validateWhmForm();
+    }
+
+    /**
+     * Toggle Cloudflare fields visibility based on skip checkbox
+     */
+    toggleCloudflareFields() {
+        const skipCloudflare = this.elements.skipCloudflare.checked;
+        
+        if (skipCloudflare) {
+            this.elements.cloudflareFields.style.display = 'none';
+        } else {
+            this.elements.cloudflareFields.style.display = 'grid';
+        }
+        
+        // Clear Cloudflare fields when skipping
+        if (skipCloudflare) {
+            this.elements.cfEmail.value = '';
+            this.elements.cfApiKey.value = '';
+            this.elements.cfRecordValue.value = '';
+            this.elements.cfAccountSelect.value = '';
+        }
+        
+        this.validateCloudflareFields();
     }
 
     /**
@@ -309,6 +356,20 @@ class CpanelBulkDelete {
             localStorage.setItem('bulkDelete_domainList', domainList);
         } catch (error) {
             console.error('Error saving domain list:', error);
+        }
+    }
+
+    /**
+     * Save form data to localStorage
+     */
+    saveFormData() {
+        try {
+            const formData = {
+                skipCloudflare: this.elements.skipCloudflare.checked
+            };
+            localStorage.setItem('bulkDelete_formData', JSON.stringify(formData));
+        } catch (error) {
+            console.error('Error saving form data:', error);
         }
     }
 
@@ -438,7 +499,6 @@ class CpanelBulkDelete {
             this.clearPreviousData();
 
             const credentials = this.getWhmCredentials();
-            const cloudflareCredentials = this.getCloudflareCredentials(); // Optional
             const domainsText = this.elements.domainList.value.trim();
             const domains = domainsText.split('\n')
                 .map(line => line.trim())
@@ -450,10 +510,16 @@ class CpanelBulkDelete {
                 domains: domains
             };
 
-            // Add Cloudflare credentials if provided
-            if (cloudflareCredentials) {
-                requestData.cloudflare = cloudflareCredentials;
-                this.showToast('info', 'DNS cleanup enabled via Cloudflare');
+            // Add Cloudflare credentials if not skipped and provided
+            const skipCloudflare = this.elements.skipCloudflare.checked;
+            if (!skipCloudflare) {
+                const cloudflareCredentials = this.getCloudflareCredentials(); // Optional
+                if (cloudflareCredentials) {
+                    requestData.cloudflare = cloudflareCredentials;
+                    this.showToast('info', 'DNS cleanup enabled via Cloudflare');
+                }
+            } else {
+                this.showToast('info', 'Cloudflare DNS cleanup skipped');
             }
 
             const response = await fetch('/api/bulk/start-deletion', {
