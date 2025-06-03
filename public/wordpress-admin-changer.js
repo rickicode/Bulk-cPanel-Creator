@@ -32,6 +32,9 @@ class WordPressAdminChanger {
         this.processedDomains = [];
         this.currentProcessingDomain = null;
         
+        // Store temporary domain data collected from logs
+        this.domainDataCache = new Map(); // Map<domain, {cpanelUser, wpUser, wpEmail, etc}>
+        
         this.init();
     }
 
@@ -600,6 +603,9 @@ class WordPressAdminChanger {
         this.processedDomains = [];
         this.currentProcessingDomain = null;
         this.lastProgressUpdate = Date.now();
+        
+        // Initialize domain data cache
+        this.domainDataCache = new Map();
 
         this.showLoading('Starting WordPress admin change...');
         
@@ -878,7 +884,7 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Handle individual log entry (enhanced debugging and robust processing)
+     * Handle individual log entry (enhanced data extraction and caching)
      */
     handleLog(data) {
         try {
@@ -891,8 +897,12 @@ class WordPressAdminChanger {
             console.log(`Processing log entry [${level}]: ${message}`);
             this.addLog(level, message, new Date(timestamp));
 
+            // Extract and cache domain-specific data from logs as they come in
+            this.extractDomainDataFromLog(message);
+
             // More comprehensive domain processing detection patterns
             const domainPatterns = [
+                /Getting cPanel username for\s*([^\s,]+)/i,
                 /Processing domain:\s*([^\s,]+)/i,
                 /Starting WordPress change for:\s*([^\s,]+)/i,
                 /Processing:\s*([^\s,]+)/i,
@@ -920,8 +930,9 @@ class WordPressAdminChanger {
                 this.addFailedChangeFromLog(logData);
             }
             
-            // Enhanced success pattern detection
+            // Enhanced success pattern detection with cached data
             const successPatterns = [
+                /WordPress admin password updated successfully for user:\s*([^\s,]+)/i,
                 /WordPress password changed successfully for\s*([^\s,]+)/i,
                 /Successfully updated password for\s*([^\s,]+)/i,
                 /Password changed for\s*([^\s,]+)/i,
@@ -932,25 +943,30 @@ class WordPressAdminChanger {
             for (const pattern of successPatterns) {
                 const domainMatch = message.match(pattern);
                 if (domainMatch) {
-                    const domain = domainMatch[1];
+                    const domain = this.currentProcessingDomain || domainMatch[1];
                     console.log(`✅ Detected success for domain: ${domain}`);
+                    
+                    // Get cached data for this domain
+                    const cachedData = this.domainDataCache.get(domain) || {};
                     
                     const successData = {
                         domain: domain,
                         success: true,
-                        cpanelUser: logData.cpanelUser || 'N/A',
-                        wpUser: logData.wpUser || 'admin',
-                        wpEmail: logData.wpEmail || `admin@${domain}`,
-                        newPassword: logData.newPassword || this.elements.newWpPassword.value,
-                        loginUrl: logData.loginUrl || `https://${domain}/wp-admin/`,
-                        hasMagicLink: logData.hasMagicLink || false
+                        cpanelUser: cachedData.cpanelUser || logData.cpanelUser || 'N/A',
+                        wpUser: cachedData.wpUser || logData.wpUser || 'admin',
+                        wpEmail: cachedData.wpEmail || logData.wpEmail || `admin@${domain}`,
+                        newPassword: cachedData.newPassword || logData.newPassword || this.elements.newWpPassword.value,
+                        loginUrl: cachedData.loginUrl || logData.loginUrl || `https://${domain}/wp-admin/`,
+                        hasMagicLink: cachedData.hasMagicLink || logData.hasMagicLink || false
                     };
+                    
+                    console.log(`🎯 Using cached data for ${domain}:`, cachedData);
                     this.addSuccessfulChange(successData);
                     break;
                 }
             }
 
-            // Enhanced failure pattern detection
+            // Enhanced failure pattern detection with cached data
             const failurePatterns = [
                 /Failed to change WordPress password for\s*([^\s,]+)/i,
                 /Error.*?password.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
@@ -962,14 +978,17 @@ class WordPressAdminChanger {
             for (const pattern of failurePatterns) {
                 const domainMatch = message.match(pattern);
                 if (domainMatch) {
-                    const domain = domainMatch[1];
+                    const domain = this.currentProcessingDomain || domainMatch[1];
                     console.log(`❌ Detected failure for domain: ${domain}`);
+                    
+                    // Get cached data for this domain
+                    const cachedData = this.domainDataCache.get(domain) || {};
                     
                     const failedData = {
                         domain: domain,
                         success: false,
                         error: logData.error || message || 'Process failed',
-                        cpanelUser: logData.cpanelUser || 'N/A'
+                        cpanelUser: cachedData.cpanelUser || logData.cpanelUser || 'N/A'
                     };
                     this.addFailedChange(failedData);
                     break;
@@ -978,6 +997,186 @@ class WordPressAdminChanger {
 
         } catch (error) {
             console.error('Error processing log entry:', error, data);
+        }
+    }
+
+    /**
+     * Extract domain-specific data from log messages and cache it
+     */
+    extractDomainDataFromLog(message) {
+        try {
+            // Extract cPanel user
+            const cpanelUserMatch = message.match(/Found cPanel user:\s*([^\s,]+)/i);
+            if (cpanelUserMatch && this.currentProcessingDomain) {
+                const cpanelUser = cpanelUserMatch[1];
+                this.updateDomainCache(this.currentProcessingDomain, { cpanelUser });
+                console.log(`💾 Cached cPanel user for ${this.currentProcessingDomain}: ${cpanelUser}`);
+            }
+
+            // Extract WordPress admin user
+            const wpUserMatch = message.match(/Found WordPress admin:\s*([^\s,]+)/i);
+            if (wpUserMatch && this.currentProcessingDomain) {
+                const wpUser = wpUserMatch[1];
+                this.updateDomainCache(this.currentProcessingDomain, { wpUser });
+                console.log(`💾 Cached WP user for ${this.currentProcessingDomain}: ${wpUser}`);
+            }
+
+            // Extract WordPress admin email
+            const wpEmailMatch = message.match(/WordPress admin email:\s*([^\s,]+)/i);
+            if (wpEmailMatch && this.currentProcessingDomain) {
+                const wpEmail = wpEmailMatch[1];
+                this.updateDomainCache(this.currentProcessingDomain, { wpEmail });
+                console.log(`💾 Cached WP email for ${this.currentProcessingDomain}: ${wpEmail}`);
+            }
+
+            // Extract magic login link and immediately update existing card
+            const magicLinkMatch = message.match(/Magic login (?:link|URL):\s*(https?:\/\/[^\s]+)/i);
+            if (magicLinkMatch && this.currentProcessingDomain) {
+                const loginUrl = magicLinkMatch[1];
+                this.updateDomainCache(this.currentProcessingDomain, { loginUrl, hasMagicLink: true });
+                console.log(`💾 Cached magic link for ${this.currentProcessingDomain}: ${loginUrl}`);
+                
+                // IMMEDIATELY update existing success card with magic link
+                this.addMagicLinkToExistingCard(this.currentProcessingDomain, loginUrl);
+            }
+
+            // Also detect alternative magic link patterns
+            const altMagicLinkMatch = message.match(/(?:Login link|Temporary login|Magic link).*?(https?:\/\/[^\s]+)/i);
+            if (altMagicLinkMatch && this.currentProcessingDomain) {
+                const loginUrl = altMagicLinkMatch[1];
+                this.updateDomainCache(this.currentProcessingDomain, { loginUrl, hasMagicLink: true });
+                console.log(`💾 Alternative magic link detected for ${this.currentProcessingDomain}: ${loginUrl}`);
+                
+                // IMMEDIATELY update existing success card with magic link
+                this.addMagicLinkToExistingCard(this.currentProcessingDomain, loginUrl);
+            }
+
+            // Detect earlier success patterns to create success card immediately after password change
+            const earlySuccessPatterns = [
+                /✓ Successfully changed admin for\s*([^\s,]+)/i,
+                /WordPress admin password updated successfully for user:\s*([^\s,]+)/i
+            ];
+
+            for (const pattern of earlySuccessPatterns) {
+                const successMatch = message.match(pattern);
+                if (successMatch && this.currentProcessingDomain) {
+                    const domain = this.currentProcessingDomain;
+                    console.log(`🎯 EARLY SUCCESS detected for domain: ${domain}`);
+                    
+                    // Get cached data for this domain
+                    const cachedData = this.domainDataCache.get(domain) || {};
+                    
+                    // Create success data immediately after password change (before magic link)
+                    const successData = {
+                        domain: domain,
+                        success: true,
+                        cpanelUser: cachedData.cpanelUser || 'N/A',
+                        wpUser: cachedData.wpUser || 'admin',
+                        wpEmail: cachedData.wpEmail || `admin@${domain}`,
+                        newPassword: cachedData.newPassword || this.elements.newWpPassword.value,
+                        loginUrl: cachedData.loginUrl || null, // Will be updated when magic link is detected
+                        hasMagicLink: cachedData.hasMagicLink || false
+                    };
+                    
+                    console.log(`🚀 EARLY SUCCESS: Creating card immediately for ${domain} with cached data:`, cachedData);
+                    this.addSuccessfulChange(successData);
+                    break;
+                }
+            }
+
+        } catch (error) {
+            console.error('Error extracting domain data from log:', error);
+        }
+    }
+
+    /**
+     * Update domain data cache
+     */
+    updateDomainCache(domain, data) {
+        if (!this.domainDataCache.has(domain)) {
+            this.domainDataCache.set(domain, {});
+        }
+        
+        const existingData = this.domainDataCache.get(domain);
+        this.domainDataCache.set(domain, { ...existingData, ...data });
+    }
+
+    /**
+     * Add magic link to existing success card immediately (REAL-TIME UPDATE)
+     */
+    addMagicLinkToExistingCard(domain, loginUrl) {
+        try {
+            // Find existing success card for this domain
+            const cardId = `success-${domain.replace(/[^a-zA-Z0-9]/g, '-')}`;
+            const existingCard = document.getElementById(cardId);
+            
+            if (existingCard) {
+                // Check for placeholder first
+                const placeholderId = `login-placeholder-${domain.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                const placeholder = document.getElementById(placeholderId);
+                
+                if (placeholder) {
+                    // Replace placeholder with actual magic link
+                    placeholder.innerHTML = `
+                        <span class="detail-label">Login URL:</span>
+                        <div class="login-link-container">
+                            <a href="${loginUrl}" target="_blank" class="login-link magic-link">
+                                🔗 Magic Login
+                            </a>
+                            <button onclick="navigator.clipboard.writeText('${loginUrl}')" class="copy-btn" title="Copy link">
+                                📋
+                            </button>
+                        </div>
+                    `;
+                    console.log(`🔗 PLACEHOLDER REPLACED: Magic link replaced placeholder for ${domain}`);
+                } else {
+                    // Check if magic link already exists
+                    const existingLoginRow = existingCard.querySelector('.login-link-container');
+                    if (existingLoginRow) {
+                        // Update existing login link to magic link
+                        existingLoginRow.innerHTML = `
+                            <a href="${loginUrl}" target="_blank" class="login-link magic-link">
+                                🔗 Magic Login
+                            </a>
+                            <button onclick="navigator.clipboard.writeText('${loginUrl}')" class="copy-btn" title="Copy link">
+                                📋
+                            </button>
+                        `;
+                        console.log(`🔗 UPDATED: Magic link updated existing link for ${domain}`);
+                    } else {
+                        // Add new login URL row to existing card
+                        const detailsSection = existingCard.querySelector('.account-details');
+                        if (detailsSection) {
+                            const loginUrlHtml = `
+                                <div class="detail-row">
+                                    <span class="detail-label">Login URL:</span>
+                                    <div class="login-link-container">
+                                        <a href="${loginUrl}" target="_blank" class="login-link magic-link">
+                                            🔗 Magic Login
+                                        </a>
+                                        <button onclick="navigator.clipboard.writeText('${loginUrl}')" class="copy-btn" title="Copy link">
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                            detailsSection.insertAdjacentHTML('beforeend', loginUrlHtml);
+                            console.log(`🔗 ADDED: Magic link row added to existing card for ${domain}`);
+                        }
+                    }
+                }
+                
+                // Add visual indicator that magic link is available
+                const statusElement = existingCard.querySelector('.account-status');
+                if (statusElement && !statusElement.innerHTML.includes('🔗')) {
+                    statusElement.innerHTML = '✓ Success 🔗';
+                }
+                
+            } else {
+                console.log(`⚠️ No existing success card found for ${domain} to add magic link`);
+            }
+        } catch (error) {
+            console.error('Error adding magic link to existing card:', error);
         }
     }
 
@@ -1096,50 +1295,59 @@ class WordPressAdminChanger {
     }
 
     /**
-     * Add individual successful change card immediately (REAL-TIME)
+     * Add individual successful change card immediately (REAL-TIME with magic link support)
      */
     addSuccessfulChangeCard(result) {
         if (!this.elements.successfulChangesList) return;
 
-        // Create the card HTML
+        // Check for any additional cached data (like magic links that came after)
+        const cachedData = this.domainDataCache.get(result.domain) || {};
+        const finalResult = { ...result, ...cachedData };
+
+        // Create the card HTML with latest data
         const cardHtml = `
             <div class="account-card success" id="success-${result.domain.replace(/[^a-zA-Z0-9]/g, '-')}">
                 <div class="account-header">
-                    <div class="account-domain">${result.domain}</div>
+                    <div class="account-domain">${finalResult.domain}</div>
                     <div class="account-status status-success">
-                        ✓ Success
+                        ✓ Success${finalResult.hasMagicLink ? ' 🔗' : ''}
                     </div>
                 </div>
                 <div class="account-details">
                     <div class="detail-row">
                         <span class="detail-label">cPanel User:</span>
-                        <span class="detail-value">${result.cpanelUser || 'N/A'}</span>
+                        <span class="detail-value">${finalResult.cpanelUser || 'N/A'}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">WP Admin User:</span>
-                        <span class="detail-value">${result.wpUser || 'N/A'}</span>
+                        <span class="detail-value">${finalResult.wpUser || 'N/A'}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">WP Admin Email:</span>
-                        <span class="detail-value">${result.wpEmail || `admin@${result.domain}`}</span>
+                        <span class="detail-value">${finalResult.wpEmail || `admin@${finalResult.domain}`}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">New Password:</span>
-                        <span class="detail-value password-field">${result.newPassword || result.newWpPassword || 'N/A'}</span>
+                        <span class="detail-value password-field">${finalResult.newPassword || finalResult.newWpPassword || 'N/A'}</span>
                     </div>
-                    ${result.loginUrl ? `
+                    ${finalResult.loginUrl ? `
                     <div class="detail-row">
                         <span class="detail-label">Login URL:</span>
                         <div class="login-link-container">
-                            <a href="${result.loginUrl}" target="_blank" class="login-link ${result.hasMagicLink ? 'magic-link' : ''}">
-                                ${result.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
+                            <a href="${finalResult.loginUrl}" target="_blank" class="login-link ${finalResult.hasMagicLink ? 'magic-link' : ''}">
+                                ${finalResult.hasMagicLink ? '🔗 Magic Login' : '🔗 Login Page'}
                             </a>
-                            <button onclick="navigator.clipboard.writeText('${result.loginUrl}')" class="copy-btn" title="Copy link">
+                            <button onclick="navigator.clipboard.writeText('${finalResult.loginUrl}')" class="copy-btn" title="Copy link">
                                 📋
                             </button>
                         </div>
                     </div>
-                    ` : ''}
+                    ` : `
+                    <div class="detail-row" id="login-placeholder-${result.domain.replace(/[^a-zA-Z0-9]/g, '-')}">
+                        <span class="detail-label">Login URL:</span>
+                        <span class="detail-value">🔄 Generating magic link...</span>
+                    </div>
+                    `}
                 </div>
             </div>
         `;
@@ -1147,7 +1355,12 @@ class WordPressAdminChanger {
         // Add the card immediately to the top of the list
         this.elements.successfulChangesList.insertAdjacentHTML('afterbegin', cardHtml);
         
-        console.log(`🎯 CARD ADDED: ${result.domain} card inserted immediately`);
+        console.log(`🎯 CARD ADDED: ${result.domain} card inserted immediately with latest data`);
+        
+        // If no login URL yet, we'll update it when magic link is detected
+        if (!finalResult.loginUrl) {
+            console.log(`⏳ Waiting for magic link for ${result.domain}...`);
+        }
     }
 
     /**
@@ -1646,6 +1859,9 @@ class WordPressAdminChanger {
         // Reset domain tracking
         this.processedDomains = [];
         this.currentProcessingDomain = null;
+        
+        // Reset domain data cache
+        this.domainDataCache.clear();
 
         // Hide results sections (matching index.js pattern)
         if (this.elements.successfulChangesSection) {

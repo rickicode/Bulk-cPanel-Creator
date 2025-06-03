@@ -170,11 +170,22 @@
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4C9.11 4 6.6 5.64 5.35 8.04C2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
                             </svg>
-                            Cloudflare DNS Cleanup
+                            Cloudflare DNS Integration
                             <span class="optional">(Optional)</span>
                         </h3>
-                        <p class="group-description">Optionally remove DNS records from Cloudflare when deleting accounts</p>
                         <div class="form-grid">
+                            <div class="form-field full-width">
+                                <label for="cfAccountSelect">Saved Cloudflare Accounts</label>
+                                <div class="select-with-action">
+                                    <select id="cfAccountSelect">
+                                        <option value="">Select saved account or enter new</option>
+                                    </select>
+                                    <button type="button" id="deleteCfAccountBtn" class="btn btn-outline btn-sm" title="Delete selected account">
+                                        🗑️
+                                    </button>
+                                </div>
+                                <small class="help-text">💡 Accounts are automatically saved when connection test is successful</small>
+                            </div>
                             <div class="form-field">
                                 <label for="cfEmail">Cloudflare Email</label>
                                 <input type="email" id="cfEmail" placeholder="your-email@example.com">
@@ -182,6 +193,18 @@
                             <div class="form-field">
                                 <label for="cfApiKey">Global API Key</label>
                                 <input type="password" id="cfApiKey" placeholder="Your Cloudflare Global API Key">
+                            </div>
+                            <div class="form-field">
+                                <label for="cfRecordType">DNS Record Type</label>
+                                <select id="cfRecordType">
+                                    <option value="A">A Record</option>
+                                    <option value="CNAME">CNAME Record</option>
+                                </select>
+                            </div>
+                            <div class="form-field" id="cfValueGroup">
+                                <label for="cfRecordValue">Record Value</label>
+                                <input type="text" id="cfRecordValue" placeholder="IP Address or Domain">
+                                <small class="help-text" id="cfValueHelp">Enter IP address for A record</small>
                             </div>
                         </div>
                         <div class="form-actions">

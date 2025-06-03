@@ -25,6 +25,9 @@ class CpanelBulkDelete {
         this.initializeElements();
         this.setupEventListeners();
         this.loadFormDefaults();
+        
+        // Load saved Cloudflare accounts
+        this.populateCloudflareAccountsDropdown();
     }
 
     /**
@@ -45,8 +48,14 @@ class CpanelBulkDelete {
             testWhmBtn: document.getElementById('testWhmBtn'),
             
             // Cloudflare Configuration (Optional)
+            cfAccountSelect: document.getElementById('cfAccountSelect'),
+            deleteCfAccountBtn: document.getElementById('deleteCfAccountBtn'),
             cfEmail: document.getElementById('cfEmail'),
             cfApiKey: document.getElementById('cfApiKey'),
+            cfRecordType: document.getElementById('cfRecordType'),
+            cfRecordValue: document.getElementById('cfRecordValue'),
+            cfValueGroup: document.getElementById('cfValueGroup'),
+            cfValueHelp: document.getElementById('cfValueHelp'),
             testCfConnectionBtn: document.getElementById('testCfConnectionBtn'),
             
             // Domain List
@@ -113,10 +122,17 @@ class CpanelBulkDelete {
         // WHM test connection
         this.elements.testWhmBtn.addEventListener('click', () => this.testWhmConnection());
         
+        // Cloudflare account management
+        this.elements.cfAccountSelect.addEventListener('change', () => this.loadSelectedCloudflareAccount());
+        this.elements.deleteCfAccountBtn.addEventListener('click', () => this.deleteSelectedCloudflareAccount());
+        
         // Cloudflare form changes (optional)
-        [this.elements.cfEmail, this.elements.cfApiKey].forEach(element => {
-            element.addEventListener('input', () => this.validateCloudflareForm());
+        [this.elements.cfEmail, this.elements.cfApiKey, this.elements.cfRecordValue].forEach(element => {
+            element.addEventListener('input', () => this.validateCloudflareFields());
         });
+        
+        // Cloudflare record type change
+        this.elements.cfRecordType.addEventListener('change', () => this.toggleCloudflareRecordType());
         
         // Cloudflare test connection
         this.elements.testCfConnectionBtn.addEventListener('click', () => this.testCloudflareConnection());
@@ -177,8 +193,11 @@ class CpanelBulkDelete {
                 
                 this.elements.cfEmail.value = cfData.email || '';
                 this.elements.cfApiKey.value = cfData.apiKey || '';
+                this.elements.cfRecordType.value = cfData.recordType || 'A';
+                this.elements.cfRecordValue.value = cfData.recordValue || '';
                 
-                this.validateCloudflareForm();
+                this.validateCloudflareFields();
+                this.toggleCloudflareRecordType();
             }
         } catch (error) {
             console.error('Error loading saved Cloudflare data:', error);
@@ -344,40 +363,6 @@ class CpanelBulkDelete {
         }
     }
 
-    /**
-     * Validate Cloudflare form (optional)
-     */
-    validateCloudflareForm() {
-        const email = this.elements.cfEmail.value.trim();
-        const apiKey = this.elements.cfApiKey.value.trim();
-        
-        // Cloudflare is optional, so only validate if both fields have values
-        const hasCredentials = email && apiKey;
-        
-        this.elements.testCfConnectionBtn.disabled = !hasCredentials;
-        
-        // Save Cloudflare data if provided
-        if (hasCredentials) {
-            this.saveCloudflareData();
-        }
-    }
-
-    /**
-     * Save Cloudflare data to localStorage
-     */
-    saveCloudflareData() {
-        try {
-            const cfData = {
-                email: this.elements.cfEmail.value.trim(),
-                apiKey: this.elements.cfApiKey.value.trim()
-            };
-            
-            const encodedData = btoa(JSON.stringify(cfData));
-            localStorage.setItem('bulkCreator_cloudflareConnection', encodedData);
-        } catch (error) {
-            console.error('Error saving Cloudflare data:', error);
-        }
-    }
 
     /**
      * Get Cloudflare credentials
@@ -396,41 +381,6 @@ class CpanelBulkDelete {
         };
     }
 
-    /**
-     * Test Cloudflare connection (optional)
-     */
-    async testCloudflareConnection() {
-        this.showLoading('Testing Cloudflare connection...');
-        
-        try {
-            const credentials = this.getCloudflareCredentials();
-            if (!credentials) {
-                this.showToast('error', 'Please enter Cloudflare email and API key');
-                return;
-            }
-            
-            const response = await fetch('/api/cloudflare/test', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ cloudflareCredentials: credentials })
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                this.showToast('success', 'Cloudflare connection successful!');
-                this.saveCloudflareData();
-            } else {
-                this.showToast('error', `Cloudflare connection failed: ${result.error}`);
-            }
-        } catch (error) {
-            this.showToast('error', `Cloudflare connection error: ${error.message}`);
-        } finally {
-            this.hideLoading();
-        }
-    }
 
     /**
      * Clear domain list
@@ -861,6 +811,288 @@ class CpanelBulkDelete {
                 }, 300);
             }
         }, duration);
+    }
+
+    /**
+     * Validate Cloudflare credentials and enable/disable test button
+     */
+    validateCloudflareFields() {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+        const recordValue = this.elements.cfRecordValue.value.trim();
+
+        const isValid = email && apiKey && recordValue;
+        this.elements.testCfConnectionBtn.disabled = !isValid;
+        
+        // Save Cloudflare connection data whenever valid data is entered
+        if (isValid) {
+            this.saveCloudflareConnectionData();
+        }
+    }
+
+    /**
+     * Toggle Cloudflare record type UI
+     */
+    toggleCloudflareRecordType() {
+        const recordType = this.elements.cfRecordType.value;
+        
+        if (recordType === 'A') {
+            this.elements.cfRecordValue.placeholder = 'IP Address (e.g., 192.168.1.100)';
+            this.elements.cfValueHelp.textContent = 'Enter IP address for A record';
+        } else if (recordType === 'CNAME') {
+            this.elements.cfRecordValue.placeholder = 'Domain (e.g., target.example.com)';
+            this.elements.cfValueHelp.textContent = 'Enter target domain for CNAME record';
+        }
+    }
+
+    /**
+     * Save Cloudflare connection data
+     */
+    saveCloudflareConnectionData() {
+        try {
+            const cloudflareData = {
+                email: this.elements.cfEmail.value.trim(),
+                apiKey: this.elements.cfApiKey.value.trim(),
+                recordType: this.elements.cfRecordType.value,
+                recordValue: this.elements.cfRecordValue.value.trim()
+            };
+            
+            const encodedData = btoa(JSON.stringify(cloudflareData));
+            localStorage.setItem('bulkCreator_cloudflareConnection', encodedData);
+        } catch (error) {
+            console.error('Error saving Cloudflare data:', error);
+        }
+    }
+
+    /**
+     * Load saved Cloudflare accounts
+     */
+    loadSavedCloudflareAccounts() {
+        try {
+            const savedAccounts = localStorage.getItem('bulkCreator_cloudflareAccounts');
+            if (savedAccounts) {
+                return JSON.parse(atob(savedAccounts));
+            }
+        } catch (error) {
+            console.warn('Failed to load saved Cloudflare accounts:', error);
+        }
+        return [];
+    }
+
+    /**
+     * Save Cloudflare accounts list
+     */
+    saveCloudflareAccountsList(accounts) {
+        try {
+            const encodedData = btoa(JSON.stringify(accounts));
+            localStorage.setItem('bulkCreator_cloudflareAccounts', encodedData);
+        } catch (error) {
+            console.error('Failed to save Cloudflare accounts:', error);
+        }
+    }
+
+    /**
+     * Populate Cloudflare accounts dropdown
+     */
+    populateCloudflareAccountsDropdown() {
+        const accounts = this.loadSavedCloudflareAccounts();
+        const select = this.elements.cfAccountSelect;
+        
+        // Clear existing options except the first one
+        while (select.options.length > 1) {
+            select.remove(1);
+        }
+        
+        // Add saved accounts
+        accounts.forEach((account, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = `${account.email} (${account.recordType}: ${account.recordValue})`;
+            select.appendChild(option);
+        });
+        
+        // Update button visibility
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Load selected Cloudflare account
+     */
+    loadSelectedCloudflareAccount() {
+        const selectedIndex = this.elements.cfAccountSelect.value;
+        if (selectedIndex === '') {
+            this.updateCloudflareAccountButtons();
+            return;
+        }
+        
+        const accounts = this.loadSavedCloudflareAccounts();
+        const account = accounts[parseInt(selectedIndex)];
+        
+        if (account) {
+            this.elements.cfEmail.value = account.email;
+            this.elements.cfApiKey.value = account.apiKey;
+            this.elements.cfRecordType.value = account.recordType;
+            this.elements.cfRecordValue.value = account.recordValue;
+            
+            // Trigger validation
+            this.validateCloudflareFields();
+            this.toggleCloudflareRecordType();
+            
+            this.showToast('success', `Loaded account: ${account.email}`);
+        }
+        
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Save current Cloudflare account
+     */
+    saveCurrentCloudflareAccount(showMessage = true) {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+        const recordType = this.elements.cfRecordType.value;
+        const recordValue = this.elements.cfRecordValue.value.trim();
+        
+        if (!email || !apiKey) {
+            if (showMessage) {
+                this.showToast('error', 'Please enter email and API key before saving');
+            }
+            return;
+        }
+        
+        const newAccount = {
+            email,
+            apiKey,
+            recordType,
+            recordValue,
+            savedAt: new Date().toISOString()
+        };
+        
+        const accounts = this.loadSavedCloudflareAccounts();
+        
+        // Check if account already exists (by email)
+        const existingIndex = accounts.findIndex(acc => acc.email === email);
+        if (existingIndex !== -1) {
+            // Update existing account
+            accounts[existingIndex] = newAccount;
+            if (showMessage) {
+                this.showToast('success', `Updated account: ${email}`);
+            }
+        } else {
+            // Add new account
+            accounts.push(newAccount);
+            if (showMessage) {
+                this.showToast('success', `Saved new account: ${email}`);
+            }
+        }
+        
+        this.saveCloudflareAccountsList(accounts);
+        this.populateCloudflareAccountsDropdown();
+        
+        // Select the saved account in dropdown
+        const accountIndex = accounts.findIndex(acc => acc.email === email);
+        if (accountIndex !== -1) {
+            this.elements.cfAccountSelect.value = accountIndex;
+        }
+        
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Delete selected Cloudflare account
+     */
+    deleteSelectedCloudflareAccount() {
+        const selectedIndex = this.elements.cfAccountSelect.value;
+        if (selectedIndex === '') {
+            this.showToast('error', 'Please select an account to delete');
+            return;
+        }
+        
+        const accounts = this.loadSavedCloudflareAccounts();
+        const account = accounts[parseInt(selectedIndex)];
+        
+        if (account && confirm(`Delete account: ${account.email}?`)) {
+            accounts.splice(parseInt(selectedIndex), 1);
+            this.saveCloudflareAccountsList(accounts);
+            this.populateCloudflareAccountsDropdown();
+            
+            // Clear form if this was the selected account
+            this.elements.cfAccountSelect.value = '';
+            this.elements.cfEmail.value = '';
+            this.elements.cfApiKey.value = '';
+            this.elements.cfRecordValue.value = '';
+            
+            this.showToast('success', `Deleted account: ${account.email}`);
+            this.validateCloudflareFields();
+        }
+        
+        this.updateCloudflareAccountButtons();
+    }
+
+    /**
+     * Update Cloudflare account management button visibility
+     */
+    updateCloudflareAccountButtons() {
+        const hasSelectedAccount = this.elements.cfAccountSelect.value !== '';
+        
+        // Show delete button only if account is selected
+        this.elements.deleteCfAccountBtn.style.display = hasSelectedAccount ? 'block' : 'none';
+    }
+
+    /**
+     * Test Cloudflare connection and auto-save if successful
+     */
+    async testCloudflareConnection() {
+        const email = this.elements.cfEmail.value.trim();
+        const apiKey = this.elements.cfApiKey.value.trim();
+
+        if (!email || !apiKey) {
+            this.showToast('error', 'Please enter Cloudflare email and API key');
+            return;
+        }
+
+        this.elements.testCfConnectionBtn.disabled = true;
+        this.elements.testCfConnectionBtn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="animate-spin">
+                <path d="M12 4V2A10 10 0 0 0 2 12h2a8 8 0 0 1 8-8Z"/>
+            </svg>
+            Testing...
+        `;
+
+        try {
+            const response = await fetch('/api/cloudflare/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    email,
+                    apiKey
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showToast('success', 'Cloudflare connection successful! Account saved automatically.');
+                
+                // Auto-save successful connection
+                this.saveCurrentCloudflareAccount(false);
+            } else {
+                this.showToast('error', `Cloudflare connection failed: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('Cloudflare test error:', error);
+            this.showToast('error', 'Failed to test Cloudflare connection');
+        } finally {
+            this.elements.testCfConnectionBtn.disabled = false;
+            this.elements.testCfConnectionBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                Test Cloudflare
+            `;
+        }
     }
 }
 

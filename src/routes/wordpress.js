@@ -533,6 +533,10 @@ async function processSingleDomain(ssh, domain, wpConfig, processStateManager, p
         });
                         processStateManager.addLog(processId, {
             level: 'info',
+            message: `Magic login URL: ${magicLinkData.loginUrl}`
+        });
+                        processStateManager.addLog(processId, {
+            level: 'info',
             message: `Magic Username: ${magicLinkData.username}`
         });
                         processStateManager.addLog(processId, {
