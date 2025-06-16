@@ -1453,41 +1453,22 @@ class BulkCreatorApp {
             const result = await response.json();
 
             if (result.success && result.data.results) {
-                this.processResults = result.data.results;
+                this.processResults = result.data.results; // Store the entire results object
                 
-                console.log('Process results:', result.data.results);
+                console.log('Final Process results from backend:', result.data.results);
                 
-                // Display skipped domains if any
-                if (result.data.results.skipped && result.data.results.skipped.length > 0) {
-                    console.log('Found skipped domains:', result.data.results.skipped);
-                    // Merge with existing skipped domains from real-time logs
-                    result.data.results.skipped.forEach(skipped => {
-                        if (!this.skippedDomains.some(s => s.domain === skipped.domain)) {
-                            this.skippedDomains.push(skipped);
-                        }
-                    });
-                    this.displaySkippedDomains(this.skippedDomains);
-                } else if (this.skippedDomains.length > 0) {
-                    // Show skipped domains from real-time logs even if final results don't have them
-                    console.log('Showing skipped domains from real-time logs:', this.skippedDomains);
-                    this.displaySkippedDomains(this.skippedDomains);
-                }
+                // Use backend's final list as the source of truth for skipped domains
+                const finalSkipped = result.data.results.skipped || [];
+                this.displaySkippedDomains(finalSkipped); // This will clear and rebuild the UI
 
-                // Display failed accounts if any
-                if (result.data.results.failed && result.data.results.failed.length > 0) {
-                    // Merge with existing failed accounts from real-time logs
-                    result.data.results.failed.forEach(failed => {
-                        if (!this.failedAccounts.some(f => f.domain === failed.domain)) {
-                            this.failedAccounts.push(failed);
-                        }
-                    });
-                    this.displayFailedAccounts(this.failedAccounts);
-                } else if (this.failedAccounts.length > 0) {
-                    // Show failed accounts from real-time logs
-                    this.displayFailedAccounts(this.failedAccounts);
-                }
+                // Use backend's final list for failed accounts
+                const finalFailed = result.data.results.failed || [];
+                this.displayFailedAccounts(finalFailed); // This will clear and rebuild the UI
+                
+                // Successful accounts are usually built up by logs, but can be reconciled here if needed.
+                // For now, assuming successful accounts are correctly handled by log parsing.
 
-                // Check for DNS errors in successful accounts
+                // Check for DNS errors in successful accounts from the final results
                 if (result.data.results.successful && result.data.results.successful.length > 0) {
                     const dnsErrors = result.data.results.successful.filter(account =>
                         account.dnsError || (account.cloudflare && !account.cloudflare.success)
@@ -1806,24 +1787,30 @@ class BulkCreatorApp {
     /**
      * Display skipped domains
      */
-    displaySkippedDomains(skippedData) {
-        console.log('displaySkippedDomains called with:', skippedData);
-        console.log('Skipped domains section element:', this.elements.skippedDomainsSection);
-        console.log('Skipped domains list element:', this.elements.skippedDomainsList);
+    displaySkippedDomains(skippedDataArray) { // Expects an array
+        console.log('displaySkippedDomains called with final data:', skippedDataArray);
         
-        this.skippedDomains = skippedData;
-        this.elements.skippedDomainsCount.textContent = skippedData.length;
-
-        this.elements.skippedDomainsList.innerHTML = '';
+        this.skippedDomains = skippedDataArray; // Update the internal list to the final one
         
-        skippedData.forEach(skipped => {
-            console.log('Adding skipped domain to display:', skipped);
-            this.addSkippedDomain(skipped);
-        });
+        if (this.elements.skippedDomainsCount) {
+            this.elements.skippedDomainsCount.textContent = this.skippedDomains.length;
+        }
 
-        this.elements.skippedDomainsSection.classList.remove('hidden');
-        console.log('Skipped domains section visibility classes:', this.elements.skippedDomainsSection.className);
-        console.log('Skipped domains section should now be visible, count:', skippedData.length);
+        if (this.elements.skippedDomainsList) {
+            this.elements.skippedDomainsList.innerHTML = ''; // Clear previous UI entries
+            this.skippedDomains.forEach(skipped => {
+                this.addSkippedDomain(skipped); // Re-render each skipped domain card
+            });
+        }
+
+        if (this.elements.skippedDomainsSection) {
+            if (this.skippedDomains.length > 0) {
+                this.elements.skippedDomainsSection.classList.remove('hidden');
+            } else {
+                this.elements.skippedDomainsSection.classList.add('hidden');
+            }
+        }
+        console.log('Skipped domains section updated. Count:', this.skippedDomains.length);
     }
 
     /**
@@ -1982,17 +1969,30 @@ class BulkCreatorApp {
     /**
      * Display failed accounts
      */
-    displayFailedAccounts(failedData) {
-        this.failedAccounts = failedData;
-        this.elements.failedAccountsCount.textContent = failedData.length;
+    displayFailedAccounts(failedDataArray) { // Expects an array
+        console.log('displayFailedAccounts called with final data:', failedDataArray);
 
-        this.elements.failedAccountsList.innerHTML = '';
+        this.failedAccounts = failedDataArray; // Update the internal list to the final one
+
+        if (this.elements.failedAccountsCount) {
+            this.elements.failedAccountsCount.textContent = this.failedAccounts.length;
+        }
+
+        if (this.elements.failedAccountsList) {
+            this.elements.failedAccountsList.innerHTML = ''; // Clear previous UI entries
+            this.failedAccounts.forEach(failed => {
+                this.addFailedAccount(failed); // Re-render each failed account card
+            });
+        }
         
-        failedData.forEach(failed => {
-            this.addFailedAccount(failed);
-        });
-
-        this.elements.failedAccountsSection.classList.remove('hidden');
+        if (this.elements.failedAccountsSection) {
+            if (this.failedAccounts.length > 0) {
+                this.elements.failedAccountsSection.classList.remove('hidden');
+            } else {
+                this.elements.failedAccountsSection.classList.add('hidden');
+            }
+        }
+        console.log('Failed accounts section updated. Count:', this.failedAccounts.length);
     }
 
     /**
