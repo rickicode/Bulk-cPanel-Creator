@@ -547,6 +547,19 @@ class WordPressAdminChanger {
                 this.displayValidationResults(result.data);
                 this.updateStartButtonState();
                 this.showToast('success', `Validation complete: ${result.data.summary.validCount} valid domains`);
+
+                // Automatically update textarea with unique, valid domains
+                if (result.data.valid && Array.isArray(result.data.valid)) {
+                    if (result.data.valid.length > 0) {
+                        this.elements.domainList.value = result.data.valid.join('\n');
+                        this.addLog('info', 'Domain list in textarea updated with unique, valid domains.');
+                    } else if (this.getDomainList().length > 0 && result.data.valid.length === 0) {
+                        // All domains were invalid or duplicates, clear the textarea if it wasn't empty
+                        this.elements.domainList.value = '';
+                        this.addLog('warn', 'All input domains were invalid or duplicates. Textarea cleared.');
+                    }
+                    this.saveFormData(); // Save the updated (or cleared) domain list
+                }
             } else {
                 this.showToast('error', `Validation failed: ${result.error}`);
             }

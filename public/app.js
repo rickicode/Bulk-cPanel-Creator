@@ -867,31 +867,59 @@ class BulkCreatorApp {
     }
 
     /**
+     * Get domain list from textarea
+     */
+    getDomainList() {
+        const domainText = this.elements.domainList.value || '';
+        return domainText.split('\n')
+            .map(domain => domain.trim())
+            .filter(domain => domain.length > 0);
+    }
+
+    /**
      * Validate domains list
      */
     async validateDomains() {
         this.showLoading('Validating domains...');
         
         try {
-            const domains = this.elements.domainList.value.trim();
+            const domainArray = this.getDomainList(); // Use helper to get array
+            if (domainArray.length === 0) {
+                this.showToast('info', 'Please enter domains to validate.');
+                this.hideLoading();
+                return;
+            }
             
             const response = await fetch('/api/bulk/validate-domains', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ domains })
+                body: JSON.stringify({ domains: domainArray }) // Send as array
             });
 
             const result = await response.json();
 
-            if (result.success) {
+            if (result.success && result.data) { // Ensure result.data exists
                 this.validationResults = result.data;
                 this.displayValidationResults(result.data);
                 this.updateStartButtonState();
                 this.showToast('success', `Validation complete: ${result.data.summary.validCount} valid domains`);
+
+                // Automatically update textarea with unique, valid domains
+                if (result.data.valid && Array.isArray(result.data.valid)) {
+                    if (result.data.valid.length > 0) {
+                        this.elements.domainList.value = result.data.valid.join('\n');
+                        this.addLog('info', 'Domain list in textarea updated with unique, valid domains.');
+                    } else if (domainArray.length > 0 && result.data.valid.length === 0) {
+                        // All domains were invalid or duplicates, clear the textarea if it wasn't empty
+                        this.elements.domainList.value = '';
+                        this.addLog('warn', 'All input domains were invalid or duplicates. Textarea cleared.');
+                    }
+                    this.saveFormData(); // Save the updated (or cleared) domain list
+                }
             } else {
-                this.showToast('error', `Validation failed: ${result.error}`);
+                this.showToast('error', `Validation failed: ${result.error || 'Unknown error'}`);
             }
 
         } catch (error) {
@@ -919,9 +947,15 @@ class BulkCreatorApp {
         if (data.invalid.length > 0) {
             this.elements.invalidList.classList.remove('hidden');
             this.elements.invalidDomainsUl.innerHTML = '';
-            data.invalid.forEach(domain => {
+            data.invalid.forEach(invalidEntry => { 
                 const li = document.createElement('li');
-                li.textContent = domain;
+                if (typeof invalidEntry === 'object' && invalidEntry !== null && invalidEntry.domain) {
+                    li.textContent = `${invalidEntry.domain} - ${invalidEntry.error || 'Invalid'}`;
+                } else if (typeof invalidEntry === 'string') {
+                    li.textContent = invalidEntry;
+                } else {
+                    li.textContent = 'Invalid entry format';
+                }
                 this.elements.invalidDomainsUl.appendChild(li);
             });
         } else {
@@ -932,10 +966,11 @@ class BulkCreatorApp {
         if (data.duplicates.length > 0) {
             this.elements.duplicateList.classList.remove('hidden');
             this.elements.duplicateDomainsUl.innerHTML = '';
-            data.duplicates.forEach(dupEntry => { // Changed variable name
+            data.duplicates.forEach(dupEntry => { 
                 const li = document.createElement('li');
-                // Assuming dupEntry is an object like { domain: 'name.com', ... }
-                // as per src/utils/validator.js
+                // The backend validator (validator.js) pushes objects like:
+                // { domain: 'thedomain.com', index: originalIndex, error: 'Duplicate domain' }
+                // So, we should access dupEntry.domain.
                 if (typeof dupEntry === 'object' && dupEntry !== null && typeof dupEntry.domain === 'string') {
                     li.textContent = dupEntry.domain; // Display only the domain name
                 } else if (typeof dupEntry === 'string') { // Fallback if it's just a string
@@ -2373,4 +2408,3 @@ class BulkCreatorApp {
 document.addEventListener('DOMContentLoaded', () => {
     new BulkCreatorApp();
 });
-
