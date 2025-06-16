@@ -591,9 +591,17 @@ class WordPressAdminChanger {
         if (data.duplicates.length > 0 && this.elements.duplicateList && this.elements.duplicateDomainsUl) {
             this.elements.duplicateList.classList.remove('hidden');
             this.elements.duplicateDomainsUl.innerHTML = '';
-            data.duplicates.forEach(domain => {
+            data.duplicates.forEach(dupEntry => { // Changed variable name for clarity
                 const li = document.createElement('li');
-                li.textContent = domain;
+                // Assuming dupEntry could be an object like { domain: 'name.com', count: X }
+                // or just a string if the backend sends it that way.
+                if (typeof dupEntry === 'object' && dupEntry !== null && dupEntry.domain) {
+                    li.textContent = `${dupEntry.domain} (found ${dupEntry.count || 'multiple'} times)`;
+                } else if (typeof dupEntry === 'string') {
+                    li.textContent = dupEntry;
+                } else {
+                    li.textContent = 'Invalid duplicate entry'; // Fallback
+                }
                 this.elements.duplicateDomainsUl.appendChild(li);
             });
         } else if (this.elements.duplicateList) {
