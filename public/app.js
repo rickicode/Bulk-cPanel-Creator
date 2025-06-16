@@ -932,9 +932,17 @@ class BulkCreatorApp {
         if (data.duplicates.length > 0) {
             this.elements.duplicateList.classList.remove('hidden');
             this.elements.duplicateDomainsUl.innerHTML = '';
-            data.duplicates.forEach(domain => {
+            data.duplicates.forEach(dupEntry => { // Changed variable name
                 const li = document.createElement('li');
-                li.textContent = domain;
+                // Assuming dupEntry is an object like { domain: 'name.com', ... }
+                // as per src/utils/validator.js
+                if (typeof dupEntry === 'object' && dupEntry !== null && typeof dupEntry.domain === 'string') {
+                    li.textContent = dupEntry.domain; // Display only the domain name
+                } else if (typeof dupEntry === 'string') { // Fallback if it's just a string
+                    li.textContent = dupEntry;
+                } else {
+                    li.textContent = 'Invalid duplicate entry format'; 
+                }
                 this.elements.duplicateDomainsUl.appendChild(li);
             });
         } else {
@@ -2365,3 +2373,4 @@ class BulkCreatorApp {
 document.addEventListener('DOMContentLoaded', () => {
     new BulkCreatorApp();
 });
+
