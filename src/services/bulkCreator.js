@@ -218,23 +218,25 @@ class BulkCreator {
   /**
    * Process a single domain
    */
-  async processSingleDomain(processId, whmApi, domain, batchNumber, domainIndex, cloudflareApi = null) {
+  async processSingleDomain(processId, whmApi, domainObject, batchNumber, domainIndex, cloudflareApi = null) { // Renamed domain to domainObject
     const processData = this.activeProcesses.get(processId);
     if (!processData) {
       throw new Error('Process data not found');
     }
 
+    const { domainName, originalLine } = domainObject; // Destructure domainName and originalLine
+
     try {
       this.processStateManager.addLog(processId, {
         level: 'info',
-        message: `Processing domain: ${domain}`,
-        data: { domain, batchNumber, domainIndex }
+        message: `Processing domain: ${domainName} (Input: ${originalLine})`, // Use domainName
+        data: { domain: domainName, originalLine, batchNumber, domainIndex } // Log domainName
       });
 
       // Skip domain existence check - let WHM tell us if domain exists during creation
       this.processStateManager.addLog(processId, {
         level: 'info',
-        message: `🚀 Attempting to create account for ${domain} (skip pre-check, let WHM validate)`
+        message: `🚀 Attempting to create account for ${domainName} (skip pre-check, let WHM validate)` // Use domainName
       });
 
       // Initialize DNS result variable
@@ -245,11 +247,11 @@ class BulkCreator {
         try {
           this.processStateManager.addLog(processId, {
             level: 'info',
-            message: `🔍 Checking DNS records for ${domain}`,
-            data: { domain, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
+            message: `🔍 Checking DNS records for ${domainName}`, // Use domainName
+            data: { domain: domainName, recordType: cloudflareApi.recordType, recordValue: cloudflareApi.recordValue }
           });
 
-          dnsResult = await cloudflareApi.addOrUpdateDnsRecord(domain);
+          dnsResult = await cloudflareApi.addOrUpdateDnsRecord(domainName); // Use domainName
           if (dnsResult.success) {
             const action = dnsResult.data.action;
             const actionEmoji = action === 'replaced' ? '🔄' : '✅';
@@ -257,9 +259,9 @@ class BulkCreator {
             
             this.processStateManager.addLog(processId, {
               level: 'info',
-              message: `${actionEmoji} DNS record ${actionText} for ${domain} -> ${cloudflareApi.recordValue} (Proxied: Yes)`,
+              message: `${actionEmoji} DNS record ${actionText} for ${domainName} -> ${cloudflareApi.recordValue} (Proxied: Yes)`, // Use domainName
               data: {
-                domain,
+                domain: domainName, // Use domainName
                 action,
                 recordType: cloudflareApi.recordType,
                 recordValue: cloudflareApi.recordValue,
@@ -271,8 +273,8 @@ class BulkCreator {
             if (action === 'replaced') {
               this.processStateManager.addLog(processId, {
                 level: 'info',
-                message: `🗑️ Removed duplicate DNS records and added new proxied record for ${domain}`,
-                data: { domain, action: 'duplicate_cleanup' }
+                message: `🗑️ Removed duplicate DNS records and added new proxied record for ${domainName}`, // Use domainName
+                data: { domain: domainName, action: 'duplicate_cleanup' } // Use domainName
               });
             }
           } else {
@@ -280,7 +282,7 @@ class BulkCreator {
             const skipReason = `Cloudflare DNS failed: ${dnsResult.error}`;
             const result = {
               success: false,
-              domain,
+              domain: domainName, // Use domainName
               error: skipReason,
               code: 'DNS_FAILED',
               skipped: true,
@@ -293,8 +295,8 @@ class BulkCreator {
 
             this.processStateManager.addLog(processId, {
               level: 'warn',
-              message: `❌ Skipping ${domain} - ${skipReason}`,
-              data: { domain, error: dnsResult.error, code: 'DNS_FAILED', skipped: true }
+              message: `❌ Skipping ${domainName} - ${skipReason}`, // Use domainName
+              data: { domain: domainName, error: dnsResult.error, code: 'DNS_FAILED', skipped: true } // Use domainName
             });
 
             return result;
@@ -304,7 +306,7 @@ class BulkCreator {
           const skipReason = `Cloudflare DNS error: ${dnsError.message}`;
           const result = {
             success: false,
-            domain,
+            domain: domainName, // Use domainName
             error: skipReason,
             code: 'DNS_ERROR',
             skipped: true,
@@ -315,23 +317,23 @@ class BulkCreator {
           processData.stats.skipped++;
           processData.stats.processed++;
 
-          this.processStateManager.addLog(processId, {
-            level: 'warn',
-            message: `❌ Skipping ${domain} - ${skipReason}`,
-            data: { domain, error: dnsError.message, code: 'DNS_ERROR', skipped: true }
-          });
+            this.processStateManager.addLog(processId, {
+              level: 'warn',
+              message: `❌ Skipping ${domainName} - ${skipReason}`, // Use domainName
+              data: { domain: domainName, error: dnsError.message, code: 'DNS_ERROR', skipped: true } // Use domainName
+            });
 
-          return result;
+            return result;
         }
       }
 
       // Generate account data
-      const username = sanitizeUsername(domain);
+      const username = sanitizeUsername(domainName); // Use domainName
       const password = generateSecurePassword();
-      const email = generateEmailFromTemplate(processData.requestData.emailTemplate, domain);
+      const email = generateEmailFromTemplate(processData.requestData.emailTemplate, domainName); // Use domainName
 
       const accountData = {
-        domain,
+        domain: domainName, // Use domainName
         username,
         password,
         email,
@@ -352,7 +354,7 @@ class BulkCreator {
       if (createResult.success) {
         const result = {
           success: true,
-          domain,
+          domain: domainName, // Use domainName
           username,
           password,
           email,
@@ -380,8 +382,8 @@ class BulkCreator {
 
         this.processStateManager.addLog(processId, {
           level: 'info',
-          message: `Account created successfully for ${domain}`,
-          data: { domain, username, password, email }
+          message: `Account created successfully for ${domainName}`, // Use domainName
+          data: { domain: domainName, username, password, email } // Use domainName
         });
 
         return result;
@@ -398,7 +400,7 @@ class BulkCreator {
           // Domain actually exists - mark as skipped
           const result = {
             success: false,
-            domain,
+            domain: domainName, // Use domainName
             username,
             error: 'Domain already exists on server',
             code: 'DOMAIN_EXISTS_ON_SERVER',
@@ -411,8 +413,8 @@ class BulkCreator {
 
           this.processStateManager.addLog(processId, {
             level: 'warn',
-            message: `❌ Domain ${domain} already exists on server (confirmed by WHM), skipping`,
-            data: { domain, username, error: 'Domain already exists on server', code: 'DOMAIN_EXISTS_ON_SERVER', skipped: true }
+            message: `❌ Domain ${domainName} already exists on server (confirmed by WHM), skipping`, // Use domainName
+            data: { domain: domainName, username, error: 'Domain already exists on server', code: 'DOMAIN_EXISTS_ON_SERVER', skipped: true } // Use domainName
           });
 
           return result;
@@ -420,7 +422,7 @@ class BulkCreator {
           // Other error - mark as failed
           const result = {
             success: false,
-            domain,
+            domain: domainName, // Use domainName
             username,
             error: createResult.error,
             code: createResult.code
@@ -432,8 +434,8 @@ class BulkCreator {
 
           this.processStateManager.addLog(processId, {
             level: 'error',
-            message: `❌ Failed to create account for ${domain}: ${createResult.error}`,
-            data: { domain, username, error: createResult.error, code: createResult.code }
+            message: `❌ Failed to create account for ${domainName}: ${createResult.error}`, // Use domainName
+            data: { domain: domainName, username, error: createResult.error, code: createResult.code } // Use domainName
           });
 
           return result;
@@ -443,7 +445,7 @@ class BulkCreator {
     } catch (error) {
       const result = {
         success: false,
-        domain,
+        domain: domainName, // Use domainName
         error: error.message,
         code: 'PROCESSING_ERROR'
       };
@@ -454,8 +456,8 @@ class BulkCreator {
 
       this.processStateManager.addLog(processId, {
         level: 'error',
-        message: `Error processing domain ${domain}: ${error.message}`,
-        data: { domain, error: error.message }
+        message: `Error processing domain ${domainName}: ${error.message}`, // Use domainName
+        data: { domain: domainName, error: error.message } // Use domainName
       });
 
       return result;

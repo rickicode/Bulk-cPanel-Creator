@@ -890,12 +890,14 @@ class BulkCreatorApp {
                 return;
             }
             
+            // For the main cPanel creator, AdSense editing is never enabled.
+            // Pass isAdsenseEditEnabled: false (or omit, as it defaults to false in validator.js)
             const response = await fetch('/api/bulk/validate-domains', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ domains: domainArray }) // Send as array
+                body: JSON.stringify({ domains: domainArray, isAdsenseEditEnabled: false }) 
             });
 
             const result = await response.json();
@@ -1028,9 +1030,12 @@ class BulkCreatorApp {
         this.showLoading('Starting bulk creation...');
         
         try {
+            // Ensure domains sent to /api/bulk/create are an array of strings (domainName)
+            const domainsForCreation = this.validationResults.valid.map(item => item.domainName);
+
             const requestData = {
                 whmCredentials: this.getWhmCredentials(),
-                domains: this.validationResults.valid,
+                domains: domainsForCreation, // Send array of strings
                 plan: this.elements.packagePlan.value,
                 emailTemplate: this.elements.emailTemplate.value.trim() || 'admin@{domain}'
             };
