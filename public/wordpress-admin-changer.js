@@ -591,16 +591,17 @@ class WordPressAdminChanger {
         if (data.duplicates.length > 0 && this.elements.duplicateList && this.elements.duplicateDomainsUl) {
             this.elements.duplicateList.classList.remove('hidden');
             this.elements.duplicateDomainsUl.innerHTML = '';
-            data.duplicates.forEach(dupEntry => { // Changed variable name for clarity
+            data.duplicates.forEach(dupEntry => { 
                 const li = document.createElement('li');
-                // Assuming dupEntry could be an object like { domain: 'name.com', count: X }
-                // or just a string if the backend sends it that way.
-                if (typeof dupEntry === 'object' && dupEntry !== null && dupEntry.domain) {
-                    li.textContent = `${dupEntry.domain} (found ${dupEntry.count || 'multiple'} times)`;
-                } else if (typeof dupEntry === 'string') {
+                // The backend validator (validator.js) pushes objects like:
+                // { domain: 'thedomain.com', index: originalIndex, error: 'Duplicate domain' }
+                // So, we should access dupEntry.domain.
+                if (typeof dupEntry === 'object' && dupEntry !== null && typeof dupEntry.domain === 'string') {
+                    li.textContent = dupEntry.domain; // Display only the domain name
+                } else if (typeof dupEntry === 'string') { // Fallback if it's just a string
                     li.textContent = dupEntry;
                 } else {
-                    li.textContent = 'Invalid duplicate entry'; // Fallback
+                    li.textContent = 'Invalid duplicate entry format'; 
                 }
                 this.elements.duplicateDomainsUl.appendChild(li);
             });
