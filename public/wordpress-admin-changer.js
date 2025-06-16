@@ -62,6 +62,9 @@ class WordPressAdminChanger {
             // WordPress Config
             newWpPassword: document.getElementById('newWpPassword'),
             showPassword: document.getElementById('showPassword'),
+            cloneWordPressCheckbox: document.getElementById('cloneWordPressCheckbox'),
+            masterDomainInputContainer: document.getElementById('masterDomainInputContainer'),
+            masterDomain: document.getElementById('masterDomain'),
             
             // Domains
             domainList: document.getElementById('domainList'),
@@ -148,6 +151,28 @@ class WordPressAdminChanger {
             this.saveFormData();
         });
 
+        // Clone options
+        if (this.elements.cloneWordPressCheckbox) {
+            this.elements.cloneWordPressCheckbox.addEventListener('change', (e) => {
+                const isChecked = e.target.checked;
+                if (this.elements.masterDomainInputContainer) {
+                    this.elements.masterDomainInputContainer.style.display = isChecked ? 'grid' : 'none';
+                }
+                if (!isChecked && this.elements.masterDomain) {
+                     this.elements.masterDomain.value = ''; // Clear master domain if clone is disabled
+                }
+                this.validateWordPressFields(); // Re-validate as masterDomain might be required
+                this.saveFormData();
+            });
+        }
+
+        if (this.elements.masterDomain) {
+            this.elements.masterDomain.addEventListener('input', () => {
+                this.validateWordPressFields();
+                this.saveFormData();
+            });
+        }
+
         this.elements.domainList.addEventListener('input', () => {
             // Clear previous data when user starts typing new domains
             if (this.currentProcessId || this.successfulChanges.length > 0) {
@@ -218,10 +243,18 @@ class WordPressAdminChanger {
                 if (this.elements[key].type === 'checkbox') {
                     this.elements[key].checked = savedValues[key];
                 } else {
-                    this.elements[key].value = savedValues[key];
+                    // Ensure element exists before setting value (e.g. masterDomain might not always be present if HTML is old)
+                    if (this.elements[key]) {
+                        this.elements[key].value = savedValues[key];
+                    }
                 }
             }
         });
+
+        // Set initial visibility for master domain input
+        if (this.elements.cloneWordPressCheckbox && this.elements.masterDomainInputContainer) {
+            this.elements.masterDomainInputContainer.style.display = this.elements.cloneWordPressCheckbox.checked ? 'grid' : 'none';
+        }
 
         // Load saved SSH connection data if exists
         try {
@@ -271,7 +304,9 @@ class WordPressAdminChanger {
     saveFormData() {
         try {
             const fieldsToSave = [
-                'newWpPassword', 'showPassword', 'domainList'
+                'newWpPassword', 'showPassword', 
+                'cloneWordPressCheckbox', 'masterDomain', 
+                'domainList'
             ];
             
             const formData = {};
@@ -351,8 +386,21 @@ class WordPressAdminChanger {
      */
     validateWordPressFields() {
         const newPassword = this.elements.newWpPassword.value;
+        let isValid = !!newPassword;
+
+        if (this.elements.cloneWordPressCheckbox && this.elements.cloneWordPressCheckbox.checked) {
+            const masterDomainValue = this.elements.masterDomain ? this.elements.masterDomain.value.trim() : '';
+            if (!masterDomainValue) {
+                isValid = false; // Master domain is required if cloning is checked
+            }
+            // Basic domain validation (optional, can be stricter)
+            // else if (!/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(masterDomainValue)) {
+            //     isValid = false; 
+            // }
+        }
+        
         this.updateStartButtonState();
-        return !!newPassword;
+        return isValid;
     }
 
     /**
@@ -371,10 +419,18 @@ class WordPressAdminChanger {
         const hasDomains = this.elements.domainList.value.trim();
         const hasValidDomains = this.validationResults && this.validationResults.valid.length > 0;
         const hasSshCredentials = this.getSshCredentials().host && this.getSshCredentials().username && this.getSshCredentials().password;
-        const hasWpPassword = this.elements.newWpPassword.value;
+        const newPassword = this.elements.newWpPassword.value;
+        let wpConfigIsValid = !!newPassword;
+
+        if (this.elements.cloneWordPressCheckbox && this.elements.cloneWordPressCheckbox.checked) {
+            const masterDomainValue = this.elements.masterDomain ? this.elements.masterDomain.value.trim() : '';
+            if (!masterDomainValue) {
+                wpConfigIsValid = false;
+            }
+        }
         
         // More strict validation like index.js - require connection test or valid credentials
-        const canStart = hasSshCredentials && hasWpPassword && hasValidDomains && !this.isProcessing;
+        const canStart = hasSshCredentials && wpConfigIsValid && hasValidDomains && !this.isProcessing;
         
         this.elements.startChangingBtn.disabled = !canStart;
         this.elements.stopChangingBtn.disabled = !this.isProcessing;
@@ -576,6 +632,8 @@ class WordPressAdminChanger {
 
         const sshCredentials = this.getSshCredentials();
         const newPassword = this.elements.newWpPassword?.value || '';
+        const cloneEnabled = this.elements.cloneWordPressCheckbox ? this.elements.cloneWordPressCheckbox.checked : false;
+        const masterDomain = cloneEnabled && this.elements.masterDomain ? this.elements.masterDomain.value.trim() : null;
 
         if (!sshCredentials.host || !sshCredentials.username || !sshCredentials.password) {
             this.showToast('error', 'Please fill in all SSH credentials');
@@ -586,6 +644,18 @@ class WordPressAdminChanger {
             this.showToast('error', 'Please enter a new WordPress password');
             return;
         }
+
+        if (cloneEnabled && !masterDomain) {
+            this.showToast('error', 'Please enter the Master Source Domain for cloning');
+            return;
+        }
+        
+        if (cloneEnabled && masterDomain && this.validationResults.valid.includes(masterDomain)) {
+            this.showToast('error', 'Master Source Domain cannot be in the list of target domains.');
+            this.addLog('error', `Master Source Domain (${masterDomain}) found in target domains. Please remove it from the list or choose a different master domain.`);
+            return;
+        }
+
 
         // Clear previous data when starting new process (matching index.js pattern)
         this.clearPreviousData();
@@ -613,7 +683,11 @@ class WordPressAdminChanger {
             const requestData = {
                 ssh: sshCredentials,
                 wordpress: {
-                    newPassword: newPassword
+                    newPassword: newPassword,
+                    cloneOptions: {
+                        enabled: cloneEnabled,
+                        masterDomain: cloneEnabled ? masterDomain : null
+                    }
                 },
                 domains: this.validationResults.valid
             };
@@ -937,14 +1011,44 @@ class WordPressAdminChanger {
                 /Successfully updated password for\s*([^\s,]+)/i,
                 /Password changed for\s*([^\s,]+)/i,
                 /Success.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
-                /✅.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i
+                /✅.*?([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i,
+                // Add pattern for clone success to ensure it's also checked against master domain
+                /Successfully cloned WordPress to\s*([^\s,]+)/i 
             ];
 
             for (const pattern of successPatterns) {
                 const domainMatch = message.match(pattern);
                 if (domainMatch) {
                     const domain = this.currentProcessingDomain || domainMatch[1];
-                    console.log(`✅ Detected success for domain: ${domain}`);
+
+                    // CRITICAL FIX: Prevent master domain from appearing in success list due to its own logs
+                    const cloneEnabled = this.elements.cloneWordPressCheckbox ? this.elements.cloneWordPressCheckbox.checked : false;
+                    const masterDomainValue = cloneEnabled && this.elements.masterDomain ? this.elements.masterDomain.value.trim() : null;
+
+                    if (cloneEnabled && masterDomainValue && domain === masterDomainValue) {
+                        // This log pertains to the master domain itself (e.g. getting its instance ID, or if it was mistakenly processed as a target for cloning)
+                        // We do not want to add the master domain to the "Successful Changes" list for target operations.
+                        // Backend already skips actual operations on master domain if it's in target list.
+                        // This frontend check prevents its logs from populating the UI success list.
+                        console.log(`ℹ️ Log for master domain (${domain}) detected. Not adding to UI success list for target operations.`);
+                        
+                        // Check if the message is specifically about clone success for the master domain (which shouldn't happen as a target)
+                        // or instance ID retrieval.
+                        if (/Successfully cloned WordPress to/.test(message) || /Successfully retrieved sourceInstanceId/.test(message)) {
+                           // These are valid operational logs for the master domain in its role as a source,
+                           // but it shouldn't be added to the *target* success list.
+                           // No further action needed here for UI list, just log.
+                        } else {
+                            // If it's a generic success message for the master domain that isn't clone-related,
+                            // it might still be a valid operation if master was also a target (though backend should skip).
+                            // However, the primary goal is to prevent master from appearing in target success list.
+                        }
+                        // Continue to next pattern or log entry, do not add this domain to success list.
+                        // We break here because we've identified the domain and handled it (by ignoring for UI list).
+                        break; 
+                    }
+                    
+                    console.log(`✅ Detected success for target domain: ${domain}`);
                     
                     // Get cached data for this domain
                     const cachedData = this.domainDataCache.get(domain) || {};

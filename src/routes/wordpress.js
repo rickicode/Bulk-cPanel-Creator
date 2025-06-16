@@ -65,6 +65,7 @@ router.post('/test-ssh', async (req, res) => {
 router.post('/start-changing', async (req, res) => {
     try {
         const { ssh, wordpress, domains } = req.body;
+        const { cloneOptions } = wordpress; // Extract cloneOptions
         
         if (!ssh || !wordpress || !domains || domains.length === 0) {
             return res.status(400).json({
@@ -72,8 +73,14 @@ router.post('/start-changing', async (req, res) => {
                 error: 'Missing required parameters'
             });
         }
+
+        if (cloneOptions && cloneOptions.enabled && !cloneOptions.masterDomain) {
+            return res.status(400).json({
+                success: false,
+                error: 'Master Source Domain is required when cloning is enabled.'
+            });
+        }
         
-        // Validate domains first (similar to index page)
         const { validateDomains } = require('../utils/validator');
         const domainValidation = validateDomains(domains);
         
@@ -86,17 +93,25 @@ router.post('/start-changing', async (req, res) => {
         
         const processId = uuidv4();
         
-        // Initialize process state
         const processInfo = {
             type: 'wordpress-admin-change',
-            domains: domainValidation.valid, // Use only valid domains
+            domains: domainValidation.valid, 
             ssh,
-            wordpress
+            wordpress 
         };
+        
+        // Log if master domain is in target list, but allow process to start (it will be skipped in the loop)
+        if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain) {
+            if (domainValidation.valid.includes(cloneOptions.masterDomain)) {
+                 processStateManager.addLog(processId, { 
+                    level: 'warn',
+                    message: `Master Source Domain (${cloneOptions.masterDomain}) was found in the target domain list and will be automatically skipped during processing. It's recommended to remove it from the target list for clarity.`
+                });
+            }
+        }
         
         const processState = req.processStateManager.startProcess(processId, processInfo);
         
-        // Initialize process with proper data structure for processStateManager
         req.processStateManager.updateProgress(processId, {
             status: 'starting',
             current: 0,
@@ -107,32 +122,14 @@ router.post('/start-changing', async (req, res) => {
             currentItem: null
         });
         
-        // Add initial log message
         req.processStateManager.addLog(processId, {
             level: 'info',
-            message: `WordPress admin change process started for ${domainValidation.valid.length} domains`
+            message: `WordPress admin change process initiated for ${domainValidation.valid.length} domains.`
         });
         
-        // Extended state for WordPress processing (local tracking only)
-        const wpProcessState = {
-            ...processState,
-            domains: domainValidation.valid,
-            processed: 0,
-            successful: 0,
-            failed: 0,
-            skipped: 0,
-            total: domainValidation.valid.length,
-            currentDomain: null,
-            results: [],
-            logs: [],
-            completed: false,
-            error: null
-        };
+        activeProcesses.set(processId, { ...processState }); 
         
-        activeProcesses.set(processId, wpProcessState);
-        
-        // Start processing in background
-        processWordPressAdminChanges(processId, ssh, wordpress, domainValidation.valid, req.processStateManager);
+        processWordPressAdminChanges(processId, ssh, wordpress, domainValidation.valid, req.processStateManager, cloneOptions);
         
         res.json({
             success: true,
@@ -152,45 +149,40 @@ router.post('/start-changing', async (req, res) => {
     }
 });
 
-// Note: Process status is handled by the shared processStateManager via /api/process/:id/status
-// No custom status route needed here
-
 // Stop process
 router.post('/stop/:processId', (req, res) => {
     try {
         const { processId } = req.params;
-        const processState = activeProcesses.get(processId);
+        const processState = req.processStateManager.getProcessStatus(processId);
         
-        if (!processState) {
+        if (!processState || processState.status === 'completed' || processState.status === 'failed' || processState.status === 'cancelled') {
             return res.status(404).json({
                 success: false,
-                error: 'Process not found'
+                error: 'Process not found, already completed, or already cancelled.'
             });
         }
         
-        // Mark process as cancelled in processStateManager
         req.processStateManager.updateProgress(processId, {
             status: 'cancelled'
         });
         
         req.processStateManager.addLog(processId, {
             level: 'warn',
-            message: 'Process stopped by user request'
+            message: 'Process stop requested by user.'
         });
         
-        // Close SSH connection if exists
         const ssh = sshConnections.get(processId);
-        if (ssh) {
+        if (ssh && ssh.isConnected()) {
             ssh.dispose();
             sshConnections.delete(processId);
+            req.processStateManager.addLog(processId, { level: 'info', message: 'SSH connection for process closed due to stop request.' });
         }
         
-        // Clean up local state
         activeProcesses.delete(processId);
         
         res.json({
             success: true,
-            message: 'Process stopped'
+            message: 'Process stop initiated successfully.'
         });
         
     } catch (error) {
@@ -202,28 +194,20 @@ router.post('/stop/:processId', (req, res) => {
     }
 });
 
-// Main processing function
-async function processWordPressAdminChanges(processId, sshConfig, wpConfig, domains, processStateManager) {
+async function processWordPressAdminChanges(processId, sshConfig, wpConfig, domains, processStateManager, cloneOptions) {
     const ssh = new NodeSSH();
+    let sourceInstanceId = null;
     
+    let results = [];
+    let processed = 0;
+    let successful = 0;
+    let failed = 0;
+    let skipped = 0;
+
     try {
-        // Update process status to connecting
-        processStateManager.updateProgress(processId, {
-            status: 'connecting',
-            currentItem: null,
-            current: 0,
-            total: domains.length,
-            successful: 0,
-            failed: 0,
-            skipped: 0
-        });
+        processStateManager.updateProgress(processId, { status: 'connecting', current: 0, total: domains.length, successful, failed, skipped });
+        processStateManager.addLog(processId, { level: 'info', message: 'Connecting to SSH server...' });
         
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: 'Connecting to SSH server...'
-        });
-        
-        // Connect to SSH
         await ssh.connect({
             host: sshConfig.host,
             port: sshConfig.port || 22,
@@ -236,340 +220,167 @@ async function processWordPressAdminChanges(processId, sshConfig, wpConfig, doma
                 }
             }
         });
-        
         sshConnections.set(processId, ssh);
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: 'SSH connection established'
-        });
-        
-        // Update status to processing
-        processStateManager.updateProgress(processId, {
-            status: 'processing'
-        });
-        
-        const results = [];
-        let processed = 0;
-        let successful = 0;
-        let failed = 0;
-        
-        // Process each domain
-        for (let i = 0; i < domains.length; i++) {
-            const currentProcess = processStateManager.getProcessStatus(processId);
-            if (currentProcess && currentProcess.status === 'cancelled') {
-                processStateManager.addLog(processId, {
-                    level: 'warn',
-                    message: 'Process stopped by user'
-                });
-                break;
-            }
-            
-            const domain = domains[i];
-            
-            // Update current domain
-            processStateManager.updateProgress(processId, {
-                currentItem: domain
-            });
-            
-            processStateManager.addLog(processId, {
-                level: 'info',
-                message: `Processing domain: ${domain}`
-            });
-            
+        processStateManager.addLog(processId, { level: 'info', message: 'SSH connection established.' });
+
+        if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain) {
+            processStateManager.addLog(processId, { level: 'info', message: `Attempting to get instance ID for master source domain: ${cloneOptions.masterDomain}` });
             try {
-                const result = await processSingleDomain(ssh, domain, wpConfig, processStateManager, processId);
-                results.push(result);
-                
-                if (result.success) {
-                    successful++;
-                    processStateManager.addLog(processId, {
-                        level: 'info',
-                        message: `✓ Successfully changed admin for ${domain}`
-                    });
-                } else {
-                    failed++;
-                    processStateManager.addLog(processId, {
-                        level: 'error',
-                        message: `✗ Failed to change admin for ${domain}: ${result.error}`
-                    });
+                const instanceIdCmd = `wp-toolkit --list -domain-name ${cloneOptions.masterDomain} -format json`;
+                const instanceIdResult = await ssh.execCommand(instanceIdCmd);
+                if (instanceIdResult.code !== 0 || !instanceIdResult.stdout) {
+                    throw new Error(`Failed to get instance ID command execution error. STDERR: ${instanceIdResult.stderr || 'N/A'}`);
                 }
-                
+                const instances = JSON.parse(instanceIdResult.stdout.trim());
+                if (instances && instances.length > 0 && instances[0].id) {
+                    sourceInstanceId = instances[0].id;
+                    processStateManager.addLog(processId, { level: 'info', message: `Successfully retrieved sourceInstanceId: ${sourceInstanceId} for ${cloneOptions.masterDomain}.` });
+                } else {
+                    throw new Error('Instance ID not found in wp-toolkit response.');
+                }
             } catch (error) {
-                failed++;
-                const errorMsg = `Error processing ${domain}: ${error.message}`;
-                processStateManager.addLog(processId, {
-                    level: 'error',
-                    message: errorMsg
-                });
-                
-                results.push({
-                    domain,
-                    success: false,
-                    error: error.message
-                });
+                processStateManager.addLog(processId, { level: 'error', message: `Failed to get sourceInstanceId for ${cloneOptions.masterDomain}: ${error.message}. Cloning will be disabled.` });
+                cloneOptions.enabled = false; 
             }
-            
-            processed++;
-            
-            // Update progress
-            processStateManager.updateProgress(processId, {
-                current: processed,
-                total: domains.length,
-                successful,
-                failed,
-                skipped: 0
-            });
-            
-            // Small delay to prevent overwhelming the server
-            await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
-        // Complete process
-        processStateManager.completeProcess(processId, {
-            results,
-            totalProcessed: processed,
-            successful,
-            failed,
-            skipped: 0,
-            totalDomains: domains.length
-        });
+        processStateManager.updateProgress(processId, { status: 'processing' });
+
+        for (let i = 0; i < domains.length; i++) {
+            const domain = domains[i];
+            const currentProcessState = processStateManager.getProcessStatus(processId);
+            if (currentProcessState && currentProcessState.status === 'cancelled') {
+                processStateManager.addLog(processId, { level: 'warn', message: `[${domain}] Process cancelled by user. Halting further operations.` });
+                break; 
+            }
+
+            processStateManager.updateProgress(processId, { currentItem: domain, current: processed, total: domains.length, successful, failed, skipped });
+
+            if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain && domain === cloneOptions.masterDomain) {
+                processStateManager.addLog(processId, { level: 'warn', message: `[${domain}] Skipped: This is the master source domain and cannot be a target for operations.` });
+                skipped++;
+                // processed is incremented at the end of the loop iteration
+            } else {
+                processStateManager.addLog(processId, { level: 'info', message: `[${domain}] Starting operations...` });
+                let operationFailedThisDomain = false;
+
+                try {
+                    if (cloneOptions && cloneOptions.enabled && sourceInstanceId) {
+                        processStateManager.addLog(processId, { level: 'info', message: `[${domain}] Attempting to clone from source ID ${sourceInstanceId}. Waiting for completion...` });
+                        const cloneResult = await cloneWordPress(ssh, sourceInstanceId, domain, processStateManager, processId);
+                        if (!cloneResult.success) {
+                            const cloneErrorMsg = `[${domain}] Clone operation failed: ${cloneResult.error}`;
+                            processStateManager.addLog(processId, { level: 'error', message: cloneErrorMsg });
+                            results.push({ domain, success: false, error: cloneErrorMsg }); // Single result for this domain
+                            failed++;
+                            operationFailedThisDomain = true;
+                        } else {
+                            processStateManager.addLog(processId, { level: 'info', message: `[${domain}] Clone successful. Target Instance ID: ${cloneResult.data?.targetInstanceId}` });
+                        }
+                    }
+
+                    if (!operationFailedThisDomain) {
+                        const passwordChangeResult = await processSingleDomain(ssh, domain, wpConfig, processStateManager, processId);
+                        results.push(passwordChangeResult); // Single result for this domain
+                        if (passwordChangeResult.success) {
+                            successful++;
+                        } else {
+                            failed++;
+                        }
+                    }
+                } catch (domainError) {
+                    const domainErrorMsg = `[${domain}] Unexpected error during processing for this domain: ${domainError.message}`;
+                    processStateManager.addLog(processId, { level: 'error', message: domainErrorMsg });
+                    results.push({ domain, success: false, error: domainError.message });
+                    failed++;
+                }
+            }
+            
+            processed++; // Increment processed for every domain attempted or skipped (master)
+            processStateManager.updateProgress(processId, { current: processed, successful, failed, skipped });
+            await new Promise(resolve => setTimeout(resolve, 1000)); 
+        }
         
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Process completed: ${successful} successful, ${failed} failed`
-        });
+        processStateManager.completeProcess(processId, { results, totalProcessed: processed, successful, failed, skipped, totalDomains: domains.length });
+        processStateManager.addLog(processId, { level: 'info', message: `Process completed: ${successful} successful, ${failed} failed, ${skipped} skipped.` });
         
-    } catch (error) {
-        processStateManager.failProcess(processId, {
-            message: `Fatal error: ${error.message}`,
-            error: error.message
-        });
-        
-        processStateManager.addLog(processId, {
-            level: 'error',
-            message: `Fatal error: ${error.message}`
-        });
-        
+    } catch (error) { // Catch errors from initial SSH connection or other fatal setup issues
+        processStateManager.failProcess(processId, { message: `Fatal error during process setup or execution: ${error.message}`, error: error.message });
+        processStateManager.addLog(processId, { level: 'error', message: `Fatal error: ${error.message}` });
         logger.error('WordPress admin changing process error:', error);
     } finally {
-        // Clean up SSH connection
-        if (ssh) {
+        if (ssh && ssh.isConnected()) {
             ssh.dispose();
         }
         sshConnections.delete(processId);
+        activeProcesses.delete(processId); 
+        processStateManager.addLog(processId, { level: 'info', message: 'Process cleanup finished.' });
     }
 }
 
-// Generate random email with WordPress domain
 function generateRandomEmail(domain) {
     const randomString = Math.random().toString(36).substring(2, 15);
     return `${randomString}@${domain}`;
 }
 
-// Process single domain
 async function processSingleDomain(ssh, domain, wpConfig, processStateManager, processId) {
+    const logPrefix = `[${domain}] [PasswordChange]`;
     try {
-        // Step 1: Get cPanel username from domain using WHM API
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Getting cPanel username for ${domain}...`
-        });
-        
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Getting cPanel username...` });
         const cpanelUserCmd = `whmapi1 listaccts | awk '/domain: ${domain}/{found=1} found && /user:/{print $2; exit}'`;
         const cpanelUserResult = await ssh.execCommand(cpanelUserCmd);
-        
-        if (cpanelUserResult.code !== 0) {
-            throw new Error(`Failed to get cPanel user: ${cpanelUserResult.stderr}`);
+        if (cpanelUserResult.code !== 0 || !cpanelUserResult.stdout.trim()) {
+            throw new Error(`Failed to get cPanel user. STDERR: ${cpanelUserResult.stderr || 'N/A'}`);
         }
-        
         const cpanelUser = cpanelUserResult.stdout.trim();
-        if (!cpanelUser) {
-            throw new Error('cPanel user not found for domain');
-        }
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Found cPanel user: ${cpanelUser}`
-        });
-        
-        // Step 2: Get current WordPress admin username for password change
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Getting WordPress admin username...`
-        });
-        
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Found cPanel user: ${cpanelUser}` });
+
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Getting WordPress admin username...` });
         const wpUserCmd = `wp user list --path=/home/${cpanelUser}/public_html --role=administrator --field=user_login --allow-root`;
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Running command: ${wpUserCmd}`
-        });
         const wpUserResult = await ssh.execCommand(wpUserCmd);
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `WP user command result - Code: ${wpUserResult.code}, Output: ${wpUserResult.stdout}, Error: ${wpUserResult.stderr}`
-        });
-        
-        if (wpUserResult.code !== 0) {
-            throw new Error(`Failed to get WordPress admin user: ${wpUserResult.stderr}`);
+        if (wpUserResult.code !== 0 || !wpUserResult.stdout.trim()) {
+            throw new Error(`Failed to get WordPress admin user. STDERR: ${wpUserResult.stderr || 'N/A'}`);
         }
-        
-        const oldWpUser = wpUserResult.stdout.trim().split('\n')[0]; // Get first admin user
-        if (!oldWpUser) {
-            throw new Error('WordPress admin user not found');
-        }
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Found WordPress admin: ${oldWpUser}`
-        });
-        
-        // Step 3: Get WordPress admin email
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Getting WordPress admin email...`
-        });
-        
+        const oldWpUser = wpUserResult.stdout.trim().split('\n')[0];
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Found WordPress admin: ${oldWpUser}` });
+
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Getting WordPress admin email...` });
         const wpEmailCmd = `wp user get ${oldWpUser} --field=email --path=/home/${cpanelUser}/public_html --allow-root`;
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Running command: ${wpEmailCmd}`
-        });
         const wpEmailResult = await ssh.execCommand(wpEmailCmd);
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Email command result - Code: ${wpEmailResult.code}, Output: ${wpEmailResult.stdout}, Error: ${wpEmailResult.stderr}`
-        });
-        
-        const wpEmail = wpEmailResult.code === 0 && wpEmailResult.stdout.trim() ?
-                       wpEmailResult.stdout.trim() :
-                       `admin@${domain}`;
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `WordPress admin email: ${wpEmail}`
-        });
-        
-        // Step 4: Update WordPress admin password
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Updating password for WordPress admin user: ${oldWpUser}`
-        });
-        
+        const wpEmail = (wpEmailResult.code === 0 && wpEmailResult.stdout.trim()) ? wpEmailResult.stdout.trim() : `admin@${domain}`;
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} WordPress admin email: ${wpEmail}` });
+
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Updating password for admin user: ${oldWpUser}` });
         const updatePasswordCmd = `wp user update ${oldWpUser} --user_pass='${wpConfig.newPassword}' --path=/home/${cpanelUser}/public_html --allow-root`;
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Running command: ${updatePasswordCmd.replace(wpConfig.newPassword, '***HIDDEN***')}`
-        });
         const updatePasswordResult = await ssh.execCommand(updatePasswordCmd);
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Password update result - Code: ${updatePasswordResult.code}, Output: ${updatePasswordResult.stdout}, Error: ${updatePasswordResult.stderr}`
-        });
-        
         if (updatePasswordResult.code !== 0) {
-            throw new Error(`Failed to update WordPress admin password: ${updatePasswordResult.stderr}`);
+            throw new Error(`Failed to update WordPress admin password. STDERR: ${updatePasswordResult.stderr || 'N/A'}`);
         }
-        
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `WordPress admin password updated successfully for user: ${oldWpUser}`
-        });
-        
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Password updated successfully for user: ${oldWpUser}` });
+
         let magicLinkData = null;
         let standardLoginUrl = `https://${domain}/wp-admin/`;
-        
-        // Step 5: Create magic login link
-        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Creating magic login link for ${domain}...`
-        });
-        
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Creating magic login link...` });
         try {
-            // Generate random email with WordPress domain
             const randomEmail = generateRandomEmail(domain);
-            processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Generated random email: ${randomEmail}`
-        });
-            
-            // Create temporary login using wp tlwp create command
             const tlwpCreateCmd = `wp tlwp create --email=${randomEmail} --role=administrator --allow-root --path=/home/${cpanelUser}/public_html`;
-            processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Running command: ${tlwpCreateCmd}`
-        });
             const tlwpResult = await ssh.execCommand(tlwpCreateCmd);
-            
-            processStateManager.addLog(processId, {
-            level: 'info',
-            message: `TLWP command result - Code: ${tlwpResult.code}, Output: ${tlwpResult.stdout}, Error: ${tlwpResult.stderr}`
-        });
-            
             if (tlwpResult.code === 0 && tlwpResult.stdout.trim()) {
-                // Parse JSON output from wp tlwp create command
-                try {
-                    const tlwpData = JSON.parse(tlwpResult.stdout.trim());
-                    
-                    // Validate required fields in JSON response
-                    if (tlwpData.status === 'success' && tlwpData.login_url) {
-                        magicLinkData = {
-                            username: tlwpData.username || 'tempuser',
-                            email: tlwpData.email || randomEmail,
-                            userId: tlwpData.user_id,
-                            role: tlwpData.role || 'administrator',
-                            loginUrl: tlwpData.login_url,
-                            expires: tlwpData.expires,
-                            maxLoginLimit: tlwpData.max_login_limit || 1,
-                            status: tlwpData.status,
-                            message: tlwpData.message
-                        };
-                        
-                        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `✓ Magic login created successfully`
-        });
-                        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Magic login URL: ${magicLinkData.loginUrl}`
-        });
-                        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Magic Username: ${magicLinkData.username}`
-        });
-                        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Magic User ID: ${magicLinkData.userId}`
-        });
-                        processStateManager.addLog(processId, {
-            level: 'info',
-            message: `Expires: ${magicLinkData.expires}`
-        });
-                    } else {
-                        processStateManager.addLog(processId, {
-            level: 'warn',
-            message: `Magic link creation failed: ${tlwpData.message || 'Unknown error'}`
-        });
-                    }
-                } catch (parseError) {
-                    processStateManager.addLog(processId, {
-            level: 'warn',
-            message: `Failed to parse TLWP output as JSON: ${parseError.message}`
-        });
+                const tlwpJson = JSON.parse(tlwpResult.stdout.trim());
+                if (tlwpJson.status === 'success' && tlwpJson.login_url) {
+                    magicLinkData = tlwpJson; // Store the whole object
+                    processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Magic login created: ${tlwpJson.login_url}` }); // Log directly from tlwpJson
+                } else {
+                    processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} Magic link creation reported non-success: ${tlwpJson.message || 'Unknown issue'}` });
+                    magicLinkData = null; // Ensure magicLinkData is null if creation wasn't fully successful
                 }
             } else {
-                processStateManager.addLog(processId, {
-            level: 'warn',
-            message: `Magic link creation failed: ${tlwpResult.stderr}`
-        });
+                processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} Magic link command failed. STDERR: ${tlwpResult.stderr || 'N/A'}` });
+                magicLinkData = null; // Ensure magicLinkData is null
             }
-        } catch (error) {
-            processStateManager.addLog(processId, {
-            level: 'warn',
-            message: `Magic link creation error: ${error.message}`
-        });
+        } catch (magicLinkError) {
+            processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} Magic link creation exception: ${magicLinkError.message}` });
+            magicLinkData = null; // Ensure magicLinkData is null on exception
         }
         
         return {
@@ -579,22 +390,51 @@ async function processSingleDomain(ssh, domain, wpConfig, processStateManager, p
             wpUser: oldWpUser,
             wpEmail: wpEmail,
             newPassword: wpConfig.newPassword,
-            loginUrl: magicLinkData ? magicLinkData.loginUrl : standardLoginUrl,
-            hasMagicLink: !!magicLinkData,
-            tempUser: magicLinkData ? magicLinkData.username : null,
-            tempUserId: magicLinkData ? magicLinkData.userId : null,
-            expires: magicLinkData ? magicLinkData.expires : null,
-            maxLoginLimit: magicLinkData ? magicLinkData.maxLoginLimit : null
+            loginUrl: (magicLinkData && magicLinkData.login_url) ? magicLinkData.login_url : standardLoginUrl,
+            hasMagicLink: !!(magicLinkData && magicLinkData.login_url),
+            tempUser: (magicLinkData && magicLinkData.username) ? magicLinkData.username : null,
+            tempUserId: (magicLinkData && magicLinkData.user_id) ? magicLinkData.user_id : null,
+            expires: (magicLinkData && magicLinkData.expires) ? magicLinkData.expires : null,
+            maxLoginLimit: (magicLinkData && magicLinkData.max_login_limit) ? magicLinkData.max_login_limit : null
         };
         
     } catch (error) {
-        return {
-            domain,
-            success: false,
-            error: error.message
-        };
+        processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} Error: ${error.message}` });
+        return { domain, success: false, error: error.message };
     }
 }
 
+async function cloneWordPress(ssh, sourceInstanceId, targetDomain, processStateManager, processId) {
+    const logPrefix = `[${targetDomain}] [Clone]`;
+    processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Executing clone: wp-toolkit --clone -source-instance-id ${sourceInstanceId} -target-domain-name ${targetDomain} -force-overwrite yes -format json. Awaiting response...` });
+
+    try {
+        const cloneCmd = `wp-toolkit --clone -source-instance-id ${sourceInstanceId} -target-domain-name ${targetDomain} -force-overwrite yes -format json`;
+        const cloneResultCmd = await ssh.execCommand(cloneCmd, { execOptions: { pty: true } });
+
+        processStateManager.addLog(processId, { level: 'debug', message: `${logPrefix} Clone command completed. STDOUT: ${cloneResultCmd.stdout || 'N/A'}, STDERR: ${cloneResultCmd.stderr || 'N/A'}, Code: ${cloneResultCmd.code}` });
+
+        if (cloneResultCmd.code !== 0 || !cloneResultCmd.stdout) {
+            const errorMsg = `Clone command failed. Exit Code: ${cloneResultCmd.code}. STDERR: ${cloneResultCmd.stderr || 'No stderr output'}. STDOUT: ${cloneResultCmd.stdout || 'No stdout output'}.`;
+            processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} ${errorMsg}` });
+            return { success: false, error: errorMsg, data: null };
+        }
+
+        const cloneOutput = JSON.parse(cloneResultCmd.stdout.trim());
+        if (cloneOutput && cloneOutput.targetInstanceId) {
+            processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} WordPress cloned successfully. New instance ID: ${cloneOutput.targetInstanceId}` });
+            return { success: true, error: null, data: cloneOutput };
+        } else {
+            const errorMsg = `Cloning to ${targetDomain} command succeeded (exit code 0) but response was unexpected or missing targetInstanceId: ${cloneResultCmd.stdout}`;
+            processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} ${errorMsg}` });
+            return { success: false, error: errorMsg, data: cloneOutput };
+        }
+    } catch (error) {
+        const errorMsg = `Exception during cloning for ${targetDomain}: ${error.message}`;
+        processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} ${errorMsg}` });
+        logger.error(`${logPrefix} Clone WordPress error details:`, error);
+        return { success: false, error: errorMsg, data: null };
+    }
+}
 
 module.exports = router;
