@@ -150,7 +150,7 @@ router.get('/validate-domains', (req, res) => {
  */
 router.post('/validate-domains', (req, res) => {
   try {
-    const { domains } = req.body;
+    const { domains, isAdsenseEditEnabled } = req.body; // Extract isAdsenseEditEnabled
 
     if (!domains) {
       return res.status(400).json({
@@ -177,8 +177,8 @@ router.post('/validate-domains', (req, res) => {
       });
     }
 
-    // Validate domains
-    const validation = validateDomains(domainList);
+    // Validate domains, passing the flag
+    const validation = validateDomains(domainList, isAdsenseEditEnabled);
 
     logger.debug('Domain validation completed (POST)', {
       total: domainList.length,

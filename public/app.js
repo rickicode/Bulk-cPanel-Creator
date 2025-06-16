@@ -901,16 +901,18 @@ class BulkCreatorApp {
             const result = await response.json();
 
             if (result.success && result.data) { // Ensure result.data exists
-                this.validationResults = result.data;
+                this.validationResults = result.data; // result.data.valid is now an array of objects
                 this.displayValidationResults(result.data);
                 this.updateStartButtonState();
                 this.showToast('success', `Validation complete: ${result.data.summary.validCount} valid domains`);
 
                 // Automatically update textarea with unique, valid domains
+                // The `valid` array now contains objects: { originalLine, domainName, adsenseId, adsenseIdError }
                 if (result.data.valid && Array.isArray(result.data.valid)) {
                     if (result.data.valid.length > 0) {
-                        this.elements.domainList.value = result.data.valid.join('\n');
-                        this.addLog('info', 'Domain list in textarea updated with unique, valid domains.');
+                        // Repopulate with the original lines that were validated
+                        this.elements.domainList.value = result.data.valid.map(item => item.originalLine).join('\n');
+                        this.addLog('info', 'Domain list in textarea updated with unique, valid (original format) domains.');
                     } else if (domainArray.length > 0 && result.data.valid.length === 0) {
                         // All domains were invalid or duplicates, clear the textarea if it wasn't empty
                         this.elements.domainList.value = '';
@@ -949,14 +951,20 @@ class BulkCreatorApp {
             this.elements.invalidDomainsUl.innerHTML = '';
             data.invalid.forEach(invalidEntry => { 
                 const li = document.createElement('li');
-                // validator.js returns invalid entries as objects: { domain, index, error }
-                // or just strings if it's from an older version/different path
-                if (typeof invalidEntry === 'object' && invalidEntry !== null && invalidEntry.domain) {
-                    li.textContent = `${invalidEntry.domain} (Error: ${invalidEntry.error || 'Invalid format'})`;
+                // validator.js now returns invalid entries as objects: 
+                // { originalLine, domainName, adsenseId, index, error, adsenseIdError }
+                if (typeof invalidEntry === 'object' && invalidEntry !== null) {
+                    let errorText = invalidEntry.error || 'Invalid format';
+                    // If adsenseIdError is present and different from the main error, append it.
+                    // This is particularly relevant if the main domain was valid but AdSense ID format was wrong.
+                    if (invalidEntry.adsenseIdError && invalidEntry.error !== invalidEntry.adsenseIdError) {
+                        errorText += ` (${invalidEntry.adsenseIdError})`;
+                    }
+                    li.textContent = `${invalidEntry.originalLine || invalidEntry.domainName || 'Invalid Entry'} - Error: ${errorText}`;
                 } else if (typeof invalidEntry === 'string') {
                     li.textContent = invalidEntry; // Fallback for simple string errors
                 } else {
-                    li.textContent = 'Invalid entry format';
+                    li.textContent = 'Invalid entry format in "invalid" array';
                 }
                 this.elements.invalidDomainsUl.appendChild(li);
             });
@@ -2410,3 +2418,34 @@ class BulkCreatorApp {
 document.addEventListener('DOMContentLoaded', () => {
     new BulkCreatorApp();
 });
+
+</final_file_content>
+
+IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.
+
+<environment_details>
+# VSCode Visible Files
+public/app.js
+
+# VSCode Open Tabs
+public/index.html
+src/routes/wordpress.js
+public/wordpress-admin-changer.html
+src/utils/validator.js
+src/routes/bulk.js
+public/wordpress-admin-changer.js
+public/app.js
+.env.example
+.env
+server.js
+public/cpanel-bulk-delete.html
+
+# Current Time
+6/16/2025, 9:20:00 AM (UTC, UTC+0:00)
+
+# Context Window Usage
+859,581 / 1,048.576K tokens used (82%)
+
+# Current Mode
+ACT MODE
+</environment_details>

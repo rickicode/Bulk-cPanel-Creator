@@ -65,6 +65,7 @@ class WordPressAdminChanger {
             cloneWordPressCheckbox: document.getElementById('cloneWordPressCheckbox'),
             masterDomainInputContainer: document.getElementById('masterDomainInputContainer'),
             masterDomain: document.getElementById('masterDomain'),
+            editAdsenseCheckbox: document.getElementById('editAdsenseCheckbox'), // New AdSense checkbox
             
             // Domains
             domainList: document.getElementById('domainList'),
@@ -243,13 +244,18 @@ class WordPressAdminChanger {
                 if (this.elements[key].type === 'checkbox') {
                     this.elements[key].checked = savedValues[key];
                 } else {
-                    // Ensure element exists before setting value (e.g. masterDomain might not always be present if HTML is old)
-                    if (this.elements[key]) {
+                    if (this.elements[key]) { // Check if element exists
                         this.elements[key].value = savedValues[key];
                     }
                 }
             }
         });
+        
+        // Ensure editAdsenseCheckbox is loaded if it exists in savedValues
+        if (this.elements.editAdsenseCheckbox && typeof savedValues.editAdsenseCheckbox === 'boolean') {
+            this.elements.editAdsenseCheckbox.checked = savedValues.editAdsenseCheckbox;
+        }
+
 
         // Set initial visibility for master domain input
         if (this.elements.cloneWordPressCheckbox && this.elements.masterDomainInputContainer) {
@@ -306,6 +312,7 @@ class WordPressAdminChanger {
             const fieldsToSave = [
                 'newWpPassword', 'showPassword', 
                 'cloneWordPressCheckbox', 'masterDomain', 
+                'editAdsenseCheckbox', // Add new checkbox to save
                 'domainList'
             ];
             
@@ -532,27 +539,30 @@ class WordPressAdminChanger {
         this.showLoading('Validating domains...');
 
         try {
+            const isAdsenseEditEnabled = this.elements.editAdsenseCheckbox ? this.elements.editAdsenseCheckbox.checked : false;
             const response = await fetch('/api/bulk/validate-domains', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ domains })
+                body: JSON.stringify({ domains, isAdsenseEditEnabled }) // Pass the flag
             });
 
             const result = await response.json();
 
             if (result.success) {
-                this.validationResults = result.data;
+                this.validationResults = result.data; // result.data.valid is an array of objects
                 this.displayValidationResults(result.data);
                 this.updateStartButtonState();
                 this.showToast('success', `Validation complete: ${result.data.summary.validCount} valid domains`);
 
                 // Automatically update textarea with unique, valid domains
+                // The `valid` array now contains objects: { originalLine, domainName, adsenseId, adsenseIdError }
                 if (result.data.valid && Array.isArray(result.data.valid)) {
                     if (result.data.valid.length > 0) {
-                        this.elements.domainList.value = result.data.valid.join('\n');
-                        this.addLog('info', 'Domain list in textarea updated with unique, valid domains.');
+                        // Repopulate with the original lines that were validated
+                        this.elements.domainList.value = result.data.valid.map(item => item.originalLine).join('\n');
+                        this.addLog('info', 'Domain list in textarea updated with unique, valid (original format) domains.');
                     } else if (this.getDomainList().length > 0 && result.data.valid.length === 0) {
                         // All domains were invalid or duplicates, clear the textarea if it wasn't empty
                         this.elements.domainList.value = '';
@@ -591,9 +601,22 @@ class WordPressAdminChanger {
         if (data.invalid.length > 0 && this.elements.invalidList && this.elements.invalidDomainsUl) {
             this.elements.invalidList.classList.remove('hidden');
             this.elements.invalidDomainsUl.innerHTML = '';
-            data.invalid.forEach(domain => {
+            data.invalid.forEach(invalidEntry => { // Changed variable name
                 const li = document.createElement('li');
-                li.textContent = domain;
+                // validator.js now returns invalid entries as objects: 
+                // { originalLine, domainName, adsenseId, index, error, adsenseIdError }
+                if (typeof invalidEntry === 'object' && invalidEntry !== null) {
+                    let errorText = invalidEntry.error || 'Invalid format';
+                    if (invalidEntry.adsenseIdError && invalidEntry.error !== invalidEntry.adsenseIdError) {
+                        // Append AdSense ID error if it's different from the main domain error
+                        errorText += ` (${invalidEntry.adsenseIdError})`;
+                    }
+                    li.textContent = `${invalidEntry.originalLine || invalidEntry.domainName || 'Invalid Entry'} - Error: ${errorText}`;
+                } else if (typeof invalidEntry === 'string') {
+                    li.textContent = invalidEntry; // Fallback for simple string errors
+                } else {
+                    li.textContent = 'Invalid entry format in "invalid" array';
+                }
                 this.elements.invalidDomainsUl.appendChild(li);
             });
         } else if (this.elements.invalidList) {
@@ -656,6 +679,7 @@ class WordPressAdminChanger {
         const newPassword = this.elements.newWpPassword?.value || '';
         const cloneEnabled = this.elements.cloneWordPressCheckbox ? this.elements.cloneWordPressCheckbox.checked : false;
         const masterDomain = cloneEnabled && this.elements.masterDomain ? this.elements.masterDomain.value.trim() : null;
+        const enableAdsenseEditing = this.elements.editAdsenseCheckbox ? this.elements.editAdsenseCheckbox.checked : false;
 
         if (!sshCredentials.host || !sshCredentials.username || !sshCredentials.password) {
             this.showToast('error', 'Please fill in all SSH credentials');
@@ -709,9 +733,10 @@ class WordPressAdminChanger {
                     cloneOptions: {
                         enabled: cloneEnabled,
                         masterDomain: cloneEnabled ? masterDomain : null
-                    }
+                    },
+                    enableAdsenseEditing // Pass the flag
                 },
-                domains: this.validationResults.valid
+                domains: this.validationResults.valid // This is now an array of objects
             };
 
             const response = await fetch('/api/wordpress/start-changing', {

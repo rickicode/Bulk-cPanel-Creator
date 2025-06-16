@@ -115,34 +115,110 @@ function validateDomain(domain) {
 /**
  * Validate bulk domains array
  */
-function validateDomains(domains) {
+function validateDomains(domains, isAdsenseEditEnabled = false) { // Added isAdsenseEditEnabled flag
   const results = {
     valid: [],
     invalid: [],
     duplicates: []
   };
   
-  const seen = new Set();
+  const seen = new Set(); // To track domain names for duplicates
+
+  if (!Array.isArray(domains)) {
+    logger.warn('[validateDomains] Input "domains" is not an array. Returning empty validation.');
+    return results; 
+  }
   
-  domains.forEach((domain, index) => {
-    const normalizedDomain = domain.trim().toLowerCase();
-    
-    if (seen.has(normalizedDomain)) {
-      results.duplicates.push({ domain, index, error: 'Duplicate domain' });
+  domains.forEach((originalLine, index) => {
+    if (typeof originalLine !== 'string') {
+      results.invalid.push({ 
+        originalLine: String(originalLine),
+        domainName: 'N/A', 
+        adsenseId: null, 
+        index, 
+        error: 'Invalid input type: expected a string.',
+        adsenseIdError: null
+      });
+      return; 
+    }
+
+    const trimmedLine = originalLine.trim();
+    if (!trimmedLine) return;
+
+    const parts = trimmedLine.split('|');
+    const domainNameInput = parts[0].trim().toLowerCase();
+    let adsenseId = null;
+    let adsenseIdError = null;
+
+    if (isAdsenseEditEnabled) {
+      if (parts.length < 2 || !parts[1].trim()) {
+        adsenseIdError = 'AdSense ID is required when "Edit AdSense ID" is checked (format: domain.com|ADSENSE_ID).';
+        // This line becomes invalid if AdSense edit is enabled and format is wrong
+        results.invalid.push({
+          originalLine,
+          domainName: domainNameInput,
+          adsenseId: null,
+          index,
+          error: adsenseIdError,
+          adsenseIdError // Keep this for consistency if needed elsewhere
+        });
+        return; // Skip further processing for this invalid line
+      }
+      const potentialAdsenseId = parts[1].trim();
+      if (/^\d{16}$/.test(potentialAdsenseId)) {
+        adsenseId = potentialAdsenseId;
+      } else {
+        adsenseIdError = 'Invalid AdSense ID format (must be 16 digits).';
+         results.invalid.push({
+          originalLine,
+          domainName: domainNameInput,
+          adsenseId: null,
+          index,
+          error: adsenseIdError,
+          adsenseIdError
+        });
+        return; // Skip further processing for this invalid line
+      }
+    } else { // AdSense edit is NOT enabled
+      // If there's an AdSense ID part, we can choose to ignore it or flag it.
+      // For now, let's ignore it if the checkbox is not checked.
+      // adsenseId remains null.
+      if (parts.length > 1 && parts[1].trim()) {
+         // Optionally log that AdSense ID was provided but ignored
+         // logger.info(`[${domainNameInput}] AdSense ID provided but feature is not enabled. ID will be ignored.`);
+      }
+    }
+
+    // Duplicate check is based on domainNameInput only
+    if (seen.has(domainNameInput)) {
+      results.duplicates.push({ 
+        originalLine, 
+        domainName: domainNameInput, 
+        adsenseId, 
+        index, 
+        error: 'Duplicate domain name' 
+      });
       return;
     }
+    seen.add(domainNameInput);
     
-    seen.add(normalizedDomain);
-    
-    const validation = validateDomain(normalizedDomain);
+    const validation = validateDomain(domainNameInput); // Validate only the domain part
     
     if (validation.isValid) {
-      results.valid.push(normalizedDomain);
+      results.valid.push({ 
+        originalLine, 
+        domainName: validation.domain, // Use the validated domain name
+        adsenseId,
+        adsenseIdError // Include AdSense ID error if any
+      });
     } else {
       results.invalid.push({ 
-        domain, 
+        originalLine, 
+        domainName: domainNameInput, // Show what was attempted
+        adsenseId, 
         index, 
-        error: validation.error 
+        error: validation.error,
+        adsenseIdError
       });
     }
   });

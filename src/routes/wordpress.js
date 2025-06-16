@@ -82,7 +82,12 @@ router.post('/start-changing', async (req, res) => {
         }
         
         const { validateDomains } = require('../utils/validator');
-        const domainValidation = validateDomains(domains);
+        // The 'domains' variable from req.body is an array of objects from the frontend's first validation pass.
+        // We need to extract the original lines and re-validate them with the correct AdSense flag.
+        const enableAdsenseEditing = wordpress.enableAdsenseEditing || false;
+        const originalDomainLines = domains.map(domainObj => domainObj.originalLine);
+
+        const domainValidation = validateDomains(originalDomainLines, enableAdsenseEditing);
         
         if (domainValidation.valid.length === 0) {
             return res.status(400).json({
@@ -246,57 +251,49 @@ async function processWordPressAdminChanges(processId, sshConfig, wpConfig, doma
         
         processStateManager.updateProgress(processId, { status: 'processing' });
 
+        // domains is now an array of objects: { originalLine, domainName, adsenseId, adsenseIdError }
         for (let i = 0; i < domains.length; i++) {
-            const domain = domains[i];
+            const domainObject = domains[i];
+            const { domainName, adsenseId, originalLine, adsenseIdError } = domainObject;
+
             const currentProcessState = processStateManager.getProcessStatus(processId);
             if (currentProcessState && currentProcessState.status === 'cancelled') {
-                processStateManager.addLog(processId, { level: 'warn', message: `[${domain}] Process cancelled by user. Halting further operations.` });
+                processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Process cancelled by user. Halting further operations.` });
                 break; 
             }
 
-            processStateManager.updateProgress(processId, { currentItem: domain, current: processed, total: domains.length, successful, failed, skipped });
+            processStateManager.updateProgress(processId, { currentItem: domainName, current: processed, total: domains.length, successful, failed, skipped });
 
-            if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain && domain === cloneOptions.masterDomain) {
-                processStateManager.addLog(processId, { level: 'warn', message: `[${domain}] Skipped: This is the master source domain and cannot be a target for operations.` });
+            if (adsenseIdError) { // Log AdSense ID format error if present
+                processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Note: ${adsenseIdError}` });
+            }
+
+            if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain && domainName === cloneOptions.masterDomain) {
+                processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Skipped: This is the master source domain and cannot be a target for operations.` });
                 skipped++;
-                // processed is incremented at the end of the loop iteration
             } else {
-                processStateManager.addLog(processId, { level: 'info', message: `[${domain}] Starting operations...` });
-                let operationFailedThisDomain = false;
+                processStateManager.addLog(processId, { level: 'info', message: `[${domainName}] Starting operations...` });
+                
+                const operationResult = await processSingleDomainOperations(
+                    ssh, 
+                    domainName, 
+                    adsenseId, // Pass the parsed adsenseId
+                    wpConfig, 
+                    processStateManager, 
+                    processId,
+                    cloneOptions, // Pass cloneOptions for cloning logic
+                    sourceInstanceId // Pass sourceInstanceId for cloning
+                );
+                results.push(operationResult);
 
-                try {
-                    if (cloneOptions && cloneOptions.enabled && sourceInstanceId) {
-                        processStateManager.addLog(processId, { level: 'info', message: `[${domain}] Attempting to clone from source ID ${sourceInstanceId}. Waiting for completion...` });
-                        const cloneResult = await cloneWordPress(ssh, sourceInstanceId, domain, processStateManager, processId);
-                        if (!cloneResult.success) {
-                            const cloneErrorMsg = `[${domain}] Clone operation failed: ${cloneResult.error}`;
-                            processStateManager.addLog(processId, { level: 'error', message: cloneErrorMsg });
-                            results.push({ domain, success: false, error: cloneErrorMsg }); // Single result for this domain
-                            failed++;
-                            operationFailedThisDomain = true;
-                        } else {
-                            processStateManager.addLog(processId, { level: 'info', message: `[${domain}] Clone successful. Target Instance ID: ${cloneResult.data?.targetInstanceId}` });
-                        }
-                    }
-
-                    if (!operationFailedThisDomain) {
-                        const passwordChangeResult = await processSingleDomain(ssh, domain, wpConfig, processStateManager, processId);
-                        results.push(passwordChangeResult); // Single result for this domain
-                        if (passwordChangeResult.success) {
-                            successful++;
-                        } else {
-                            failed++;
-                        }
-                    }
-                } catch (domainError) {
-                    const domainErrorMsg = `[${domain}] Unexpected error during processing for this domain: ${domainError.message}`;
-                    processStateManager.addLog(processId, { level: 'error', message: domainErrorMsg });
-                    results.push({ domain, success: false, error: domainError.message });
+                if (operationResult.overallSuccess) { // We'll add an 'overallSuccess' flag
+                    successful++;
+                } else {
                     failed++;
                 }
             }
             
-            processed++; // Increment processed for every domain attempted or skipped (master)
+            processed++;
             processStateManager.updateProgress(processId, { current: processed, successful, failed, skipped });
             await new Promise(resolve => setTimeout(resolve, 1000)); 
         }
@@ -323,11 +320,32 @@ function generateRandomEmail(domain) {
     return `${randomString}@${domain}`;
 }
 
-async function processSingleDomain(ssh, domain, wpConfig, processStateManager, processId) {
-    const logPrefix = `[${domain}] [PasswordChange]`;
+async function processSingleDomainOperations(ssh, domainName, adsenseId, wpConfig, processStateManager, processId, cloneOptions, sourceInstanceId) {
+    const logPrefix = `[${domainName}]`;
+    let cpanelUser = null; // To store cPanel user for AdSense editing if password change fails but cloning was ok
+    let overallSuccess = false; // Flag for the entire operation for this domain
+    let passwordChangeSuccess = false;
+    let adsenseEditStatus = { success: false, message: 'Not attempted' };
+    let cloneSuccess = true; // Assume true if not applicable or successful
+
     try {
-        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Getting cPanel username...` });
-        const cpanelUserCmd = `whmapi1 listaccts | awk '/domain: ${domain}/{found=1} found && /user:/{print $2; exit}'`;
+        // Step 1: Kloning Opsional (moved inside)
+        if (cloneOptions && cloneOptions.enabled && sourceInstanceId) {
+            processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} [Clone] Attempting to clone from source ID ${sourceInstanceId}.` });
+            const cloneResult = await cloneWordPress(ssh, sourceInstanceId, domainName, processStateManager, processId);
+            if (!cloneResult.success) {
+                const cloneErrorMsg = `Clone operation failed: ${cloneResult.error}`;
+                processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} [Clone] ${cloneErrorMsg}` });
+                // Return immediately as other operations depend on a successful clone (if cloning was attempted)
+                return { domain: domainName, overallSuccess: false, error: cloneErrorMsg, cloneStatus: cloneResult };
+            }
+            processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} [Clone] Clone successful. Target Instance ID: ${cloneResult.data?.targetInstanceId}` });
+            cloneSuccess = true;
+        }
+
+        // Step 2: Password Change and Magic Link (Original logic from processSingleDomain)
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} [PasswordChange] Getting cPanel username...` });
+        const cpanelUserCmd = `whmapi1 listaccts | awk '/domain: ${domainName}/{found=1} found && /user:/{print $2; exit}'`;
         const cpanelUserResult = await ssh.execCommand(cpanelUserCmd);
         if (cpanelUserResult.code !== 0 || !cpanelUserResult.stdout.trim()) {
             throw new Error(`Failed to get cPanel user. STDERR: ${cpanelUserResult.stderr || 'N/A'}`);
@@ -359,32 +377,34 @@ async function processSingleDomain(ssh, domain, wpConfig, processStateManager, p
         processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Password updated successfully for user: ${oldWpUser}` });
 
         let magicLinkData = null;
-        let standardLoginUrl = `https://${domain}/wp-admin/`;
+        let standardLoginUrl = `https://${domainName}/wp-admin/`; // Use domainName
         processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Creating magic login link...` });
         try {
-            const randomEmail = generateRandomEmail(domain);
+            const randomEmail = generateRandomEmail(domainName); // Use domainName
             const tlwpCreateCmd = `wp tlwp create --email=${randomEmail} --role=administrator --allow-root --path=/home/${cpanelUser}/public_html`;
             const tlwpResult = await ssh.execCommand(tlwpCreateCmd);
             if (tlwpResult.code === 0 && tlwpResult.stdout.trim()) {
                 const tlwpJson = JSON.parse(tlwpResult.stdout.trim());
                 if (tlwpJson.status === 'success' && tlwpJson.login_url) {
-                    magicLinkData = tlwpJson; // Store the whole object
-                    processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Magic login created: ${tlwpJson.login_url}` }); // Log directly from tlwpJson
+                    magicLinkData = tlwpJson;
+                    processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Magic login created: ${tlwpJson.login_url}` });
                 } else {
                     processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} Magic link creation reported non-success: ${tlwpJson.message || 'Unknown issue'}` });
-                    magicLinkData = null; // Ensure magicLinkData is null if creation wasn't fully successful
+                    magicLinkData = null;
                 }
             } else {
                 processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} Magic link command failed. STDERR: ${tlwpResult.stderr || 'N/A'}` });
-                magicLinkData = null; // Ensure magicLinkData is null
+                magicLinkData = null;
             }
         } catch (magicLinkError) {
             processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} Magic link creation exception: ${magicLinkError.message}` });
-            magicLinkData = null; // Ensure magicLinkData is null on exception
+            magicLinkData = null;
         }
         
-        return {
-            domain,
+        passwordChangeSuccess = true; // Mark password change as successful
+        
+        const passwordChangeResultData = {
+            domain: domainName, // Use domainName
             success: true,
             cpanelUser,
             wpUser: oldWpUser,
@@ -395,14 +415,118 @@ async function processSingleDomain(ssh, domain, wpConfig, processStateManager, p
             tempUser: (magicLinkData && magicLinkData.username) ? magicLinkData.username : null,
             tempUserId: (magicLinkData && magicLinkData.user_id) ? magicLinkData.user_id : null,
             expires: (magicLinkData && magicLinkData.expires) ? magicLinkData.expires : null,
-            maxLoginLimit: (magicLinkData && magicLinkData.max_login_limit) ? magicLinkData.max_login_limit : null
+            maxLoginLimit: (magicLinkData && magicLinkData.max_login_limit) ? magicLinkData.max_login_limit : null,
+        };
+
+        // Step 3: Edit AdSense ID in header.php
+        // This step only runs if AdSense editing is enabled (adsenseId is present) AND password change was successful.
+        if (wpConfig.enableAdsenseEditing && adsenseId && passwordChangeSuccess && cpanelUser) {
+            processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} [AdSenseEdit] Attempting to edit header.php for AdSense ID: ${adsenseId}` });
+            const adsenseResult = await editAdsenseInHeaderFile(ssh, cpanelUser, domainName, adsenseId, processStateManager, processId);
+            adsenseEditStatus = adsenseResult;
+            if (!adsenseResult.success) {
+                processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} [AdSenseEdit] ${adsenseResult.message}` });
+                // Not failing the overall success for AdSense edit failure, but logging it.
+            } else {
+                 processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} [AdSenseEdit] ${adsenseResult.message}` });
+            }
+        } else if (wpConfig.enableAdsenseEditing && adsenseId) { // AdSense was intended but prerequisites failed
+            adsenseEditStatus.message = 'Skipped: AdSense edit prerequisites (e.g., password change, cPanel user) not met.';
+            processStateManager.addLog(processId, { level: 'warn', message: `${logPrefix} [AdSenseEdit] ${adsenseEditStatus.message}` });
+        }
+        // If !wpConfig.enableAdsenseEditing, adsenseEditStatus remains { success: false, message: 'Not attempted' }
+
+        overallSuccess = passwordChangeSuccess; // Overall success depends on password change; AdSense is optional enhancement.
+        
+        return { 
+            ...passwordChangeResultData,
+            overallSuccess, 
+            adsenseEditStatus 
         };
         
     } catch (error) {
-        processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} Error: ${error.message}` });
-        return { domain, success: false, error: error.message };
+        // This catch block handles errors from getting cPanel user, WP user, or updating password.
+        processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} [PasswordChange/Setup] Error: ${error.message}` });
+        return { 
+            domain: domainName, 
+            overallSuccess: false, 
+            error: error.message, 
+            cpanelUser, // Include cpanelUser if obtained before error
+            adsenseEditStatus: { success: false, message: 'Skipped due to password change error.' } 
+        };
     }
 }
+
+async function editAdsenseInHeaderFile(ssh, cpanelUser, domainName, adsenseId, processStateManager, processId) {
+    const logPrefix = `[${domainName}] [AdSenseEdit]`;
+    const filePath = `/home/${cpanelUser}/public_html/wp-content/themes/superfast/header.php`;
+    const tempFilePath = `/home/${cpanelUser}/header.php.tmp.${Date.now()}`; // Temporary file for sed output
+
+    try {
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Checking if header file exists: ${filePath}` });
+
+        // Check if file exists
+        const checkFileCmd = `if [ -f "${filePath}" ]; then echo "exists"; else echo "not_exists"; fi`;
+        const fileCheckResult = await ssh.execCommand(checkFileCmd);
+
+        if (fileCheckResult.stdout.trim() !== "exists") {
+            return { success: false, message: `File not found: ${filePath}` };
+        }
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} File ${filePath} exists. Proceeding with edit.` });
+
+        // Escape adsenseId for sed if it contains special characters (though it should be numeric)
+        const escapedAdsenseId = adsenseId.replace(/[&/\\$'"]/g, '\\$&');
+        
+        // Regex to find any existing 16-digit ca-pub ID.
+        // It matches 'ca-pub-' followed by 16 digits.
+        const oldAdsensePattern = "[0-9]\\{16\\}"; // For use in sed, digits 0-9, 16 times.
+        
+        // Using sed for in-place replacement. Create a backup first.
+        // 1. Backup the file
+        // 2. Use sed to replace.
+        //    Pattern: <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-ANY_16_DIGIT_ID"
+        //    Replacement: <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-NEW_ID"
+        //    The regex captures the part before the ID and the closing quote.
+        //    Using a different delimiter for sed (#) to avoid issues with slashes in URLs.
+        const backupCmd = `cp "${filePath}" "${filePath}.bak_adsense_$(date +%s)"`; // Unique backup name
+        // The sed command now uses a regex to match any 16-digit number after ca-pub-
+        const sedCmd = `sed -i.bak_sed "s#\\(<script async src=\\"https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-\\)${oldAdsensePattern}\\(\\"\\)#\\1${escapedAdsenseId}\\2#g" "${filePath}"`;
+
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Backing up file: ${backupCmd}` });
+        const backupResult = await ssh.execCommand(backupCmd);
+        if (backupResult.code !== 0) {
+            const errMsg = `Failed to backup ${filePath}. STDERR: ${backupResult.stderr}`;
+            processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} ${errMsg}` });
+            return { success: false, message: errMsg };
+        }
+
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Executing sed command to replace AdSense ID.` });
+        const editResult = await ssh.execCommand(sedCmd);
+
+        if (editResult.code !== 0) {
+            const errMsg = `Failed to edit ${filePath} with sed. STDERR: ${editResult.stderr}. Attempting to restore from backup.`;
+            processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} ${errMsg}` });
+            // Attempt to restore backup
+            await ssh.execCommand(`mv "${filePath}.bak_adsense_change" "${filePath}"`);
+            return { success: false, message: errMsg };
+        }
+
+        // Verify if the change was made (optional, but good for confirmation)
+        // This check is simplified; a more robust check might involve checking for the new ID.
+        // For now, we assume sed success (exit code 0) means the replacement happened if the pattern was found.
+        processStateManager.addLog(processId, { level: 'info', message: `${logPrefix} Successfully edited ${filePath}. Attempted to replace existing ca-pub-XXXXXXXXXXXXXXXX with ${adsenseId}.` });
+        return { success: true, message: `AdSense ID updated in ${filePath}` };
+
+    } catch (error) {
+        const errorMsg = `Exception during AdSense ID edit in ${filePath}: ${error.message}`;
+        processStateManager.addLog(processId, { level: 'error', message: `${logPrefix} ${errorMsg}` });
+        logger.error(`${logPrefix} AdSense edit error:`, error);
+        // Attempt to restore backup if an exception occurred after backup
+        await ssh.execCommand(`if [ -f "${filePath}.bak_adsense_change" ]; then mv "${filePath}.bak_adsense_change" "${filePath}"; fi`);
+        return { success: false, message: errorMsg };
+    }
+}
+
 
 async function cloneWordPress(ssh, sourceInstanceId, targetDomain, processStateManager, processId) {
     const logPrefix = `[${targetDomain}] [Clone]`;
