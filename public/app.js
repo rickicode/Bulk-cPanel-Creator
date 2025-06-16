@@ -949,10 +949,12 @@ class BulkCreatorApp {
             this.elements.invalidDomainsUl.innerHTML = '';
             data.invalid.forEach(invalidEntry => { 
                 const li = document.createElement('li');
+                // validator.js returns invalid entries as objects: { domain, index, error }
+                // or just strings if it's from an older version/different path
                 if (typeof invalidEntry === 'object' && invalidEntry !== null && invalidEntry.domain) {
-                    li.textContent = `${invalidEntry.domain} - ${invalidEntry.error || 'Invalid'}`;
+                    li.textContent = `${invalidEntry.domain} (Error: ${invalidEntry.error || 'Invalid format'})`;
                 } else if (typeof invalidEntry === 'string') {
-                    li.textContent = invalidEntry;
+                    li.textContent = invalidEntry; // Fallback for simple string errors
                 } else {
                     li.textContent = 'Invalid entry format';
                 }
