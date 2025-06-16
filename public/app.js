@@ -2418,34 +2418,3 @@ class BulkCreatorApp {
 document.addEventListener('DOMContentLoaded', () => {
     new BulkCreatorApp();
 });
-
-</final_file_content>
-
-IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.
-
-<environment_details>
-# VSCode Visible Files
-public/app.js
-
-# VSCode Open Tabs
-public/index.html
-src/routes/wordpress.js
-public/wordpress-admin-changer.html
-src/utils/validator.js
-src/routes/bulk.js
-public/wordpress-admin-changer.js
-public/app.js
-.env.example
-.env
-server.js
-public/cpanel-bulk-delete.html
-
-# Current Time
-6/16/2025, 9:20:00 AM (UTC, UTC+0:00)
-
-# Context Window Usage
-859,581 / 1,048.576K tokens used (82%)
-
-# Current Mode
-ACT MODE
-</environment_details>
