@@ -2,7 +2,8 @@ const WHMApi = require('./whmApi');
 const CloudflareApi = require('./cloudflareApi');
 const sshService = require('./sshService');
 
-const CONCURRENCY_LIMIT = 10;
+// Use the same concurrency setting as the other tools for consistency.
+const CONCURRENCY_LIMIT = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS, 10) || 10;
 
 /**
  * Validates all credentials concurrently by instantiating API classes.

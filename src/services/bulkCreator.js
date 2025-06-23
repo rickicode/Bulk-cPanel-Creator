@@ -13,7 +13,7 @@ class BulkCreator {
   constructor(processStateManager) {
     this.processStateManager = processStateManager;
     this.activeProcesses = new Map();
-    this.maxConcurrent = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS) || 5;
+    this.maxConcurrent = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS, 10) || 10;
     this.batchSize = parseInt(process.env.BATCH_SIZE) || 10;
     
     logger.info('Bulk Creator service initialized', {
