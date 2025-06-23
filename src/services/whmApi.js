@@ -19,7 +19,15 @@ class WHMApi {
       },
       // Allow self-signed certificates for development
       httpsAgent: new https.Agent({
-        rejectUnauthorized: process.env.NODE_ENV === 'production'
+        rejectUnauthorized: process.env.NODE_ENV === 'production',
+        checkServerIdentity: (hostname, cert) => {
+          const error = https.checkServerIdentity(hostname, cert);
+          if (error) {
+            logger.warn(`Bypassing SSL certificate hostname validation for ${hostname}. Error: ${error.message}`);
+            return undefined; // Bypass the error
+          }
+          return undefined; // Success
+        },
       })
     });
 
