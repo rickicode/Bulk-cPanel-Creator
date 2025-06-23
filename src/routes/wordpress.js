@@ -5,6 +5,9 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// Concurrency setting
+const CONCURRENCY_LIMIT = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS, 10) || 10;
+
 // Store active SSH connections and processes
 const activeProcesses = new Map();
 const sshConnections = new Map();
@@ -202,17 +205,11 @@ router.post('/stop/:processId', (req, res) => {
 async function processWordPressAdminChanges(processId, sshConfig, wpConfig, domains, processStateManager, cloneOptions) {
     const ssh = new NodeSSH();
     let sourceInstanceId = null;
-    
-    let results = [];
-    let processed = 0;
-    let successful = 0;
-    let failed = 0;
-    let skipped = 0;
 
     try {
-        processStateManager.updateProgress(processId, { status: 'connecting', current: 0, total: domains.length, successful, failed, skipped });
+        processStateManager.updateProgress(processId, { status: 'connecting', current: 0, total: domains.length, successful: 0, failed: 0, skipped: 0 });
         processStateManager.addLog(processId, { level: 'info', message: 'Connecting to SSH server...' });
-        
+
         await ssh.connect({
             host: sshConfig.host,
             port: sshConfig.port || 22,
@@ -245,73 +242,99 @@ async function processWordPressAdminChanges(processId, sshConfig, wpConfig, doma
                 }
             } catch (error) {
                 processStateManager.addLog(processId, { level: 'error', message: `Failed to get sourceInstanceId for ${cloneOptions.masterDomain}: ${error.message}. Cloning will be disabled.` });
-                cloneOptions.enabled = false; 
+                cloneOptions.enabled = false;
             }
         }
-        
+
         processStateManager.updateProgress(processId, { status: 'processing' });
 
-        // domains is now an array of objects: { originalLine, domainName, adsenseId, adsenseIdError }
-        for (let i = 0; i < domains.length; i++) {
-            const domainObject = domains[i];
-            const { domainName, adsenseId, originalLine, adsenseIdError } = domainObject;
+        const domainQueue = [...domains];
+        let activePromises = 0;
+        let results = [];
+        let processed = 0;
+        let successful = 0;
+        let failed = 0;
+        let skipped = 0;
 
+        const processNext = async () => {
             const currentProcessState = processStateManager.getProcessStatus(processId);
             if (currentProcessState && currentProcessState.status === 'cancelled') {
-                processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Process cancelled by user. Halting further operations.` });
-                break; 
-            }
-
-            processStateManager.updateProgress(processId, { currentItem: domainName, current: processed, total: domains.length, successful, failed, skipped });
-
-            if (adsenseIdError) { // Log AdSense ID format error if present
-                processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Note: ${adsenseIdError}` });
-            }
-
-            if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain && domainName === cloneOptions.masterDomain) {
-                processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Skipped: This is the master source domain and cannot be a target for operations.` });
-                skipped++;
-            } else {
-                processStateManager.addLog(processId, { level: 'info', message: `[${domainName}] Starting operations...` });
-                
-                const operationResult = await processSingleDomainOperations(
-                    ssh, 
-                    domainName, 
-                    adsenseId, // Pass the parsed adsenseId
-                    wpConfig, 
-                    processStateManager, 
-                    processId,
-                    cloneOptions, // Pass cloneOptions for cloning logic
-                    sourceInstanceId // Pass sourceInstanceId for cloning
-                );
-                results.push(operationResult);
-
-                if (operationResult.overallSuccess) { // We'll add an 'overallSuccess' flag
-                    successful++;
-                } else {
-                    failed++;
+                // If cancelled, ensure we don't start new tasks.
+                // Let existing tasks finish, then cleanup.
+                if (activePromises === 0) {
+                    cleanup();
                 }
+                return;
             }
-            
-            processed++;
-            processStateManager.updateProgress(processId, { current: processed, successful, failed, skipped });
-            await new Promise(resolve => setTimeout(resolve, 1000)); 
-        }
+
+            if (domainQueue.length === 0 && activePromises === 0) {
+                processStateManager.completeProcess(processId, { results, totalProcessed: processed, successful, failed, skipped, totalDomains: domains.length });
+                processStateManager.addLog(processId, { level: 'info', message: `Process completed: ${successful} successful, ${failed} failed, ${skipped} skipped.` });
+                cleanup();
+                return;
+            }
+
+            while (domainQueue.length > 0 && activePromises < CONCURRENCY_LIMIT) {
+                activePromises++;
+                const domainObject = domainQueue.shift();
+                const { domainName, adsenseId, adsenseIdError } = domainObject;
+
+                (async () => {
+                    processStateManager.updateProgress(processId, { currentItem: domainName, current: processed, total: domains.length, successful, failed, skipped });
+
+                    if (adsenseIdError) {
+                        processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Note: ${adsenseIdError}` });
+                    }
+
+                    if (cloneOptions && cloneOptions.enabled && cloneOptions.masterDomain && domainName === cloneOptions.masterDomain) {
+                        processStateManager.addLog(processId, { level: 'warn', message: `[${domainName}] Skipped: This is the master source domain.` });
+                        skipped++;
+                    } else {
+                        processStateManager.addLog(processId, { level: 'info', message: `[${domainName}] Starting operations...` });
+                        const operationResult = await processSingleDomainOperations(ssh, domainName, adsenseId, wpConfig, processStateManager, processId, cloneOptions, sourceInstanceId);
+                        results.push(operationResult);
+                        if (operationResult.overallSuccess) {
+                            successful++;
+                        } else {
+                            failed++;
+                        }
+                    }
+                    processed++;
+                })()
+                .catch(err => {
+                    failed++;
+                    processed++;
+                    processStateManager.addLog(processId, { level: 'error', message: `[${domainName}] An unexpected critical error occurred: ${err.message}` });
+                    results.push({ domain: domainName, overallSuccess: false, error: err.message });
+                })
+                .finally(() => {
+                    activePromises--;
+                    processStateManager.updateProgress(processId, { current: processed, successful, failed, skipped });
+                    processNext();
+                });
+            }
+        };
         
-        processStateManager.completeProcess(processId, { results, totalProcessed: processed, successful, failed, skipped, totalDomains: domains.length });
-        processStateManager.addLog(processId, { level: 'info', message: `Process completed: ${successful} successful, ${failed} failed, ${skipped} skipped.` });
-        
-    } catch (error) { // Catch errors from initial SSH connection or other fatal setup issues
-        processStateManager.failProcess(processId, { message: `Fatal error during process setup or execution: ${error.message}`, error: error.message });
+        const cleanup = () => {
+            if (ssh && ssh.isConnected()) {
+                ssh.dispose();
+            }
+            sshConnections.delete(processId);
+            activeProcesses.delete(processId);
+            processStateManager.addLog(processId, { level: 'info', message: 'Process cleanup finished.' });
+        };
+
+        processNext();
+
+    } catch (error) {
+        processStateManager.failProcess(processId, { message: `Fatal error during process setup: ${error.message}`, error: error.message });
         processStateManager.addLog(processId, { level: 'error', message: `Fatal error: ${error.message}` });
         logger.error('WordPress admin changing process error:', error);
-    } finally {
         if (ssh && ssh.isConnected()) {
             ssh.dispose();
         }
         sshConnections.delete(processId);
-        activeProcesses.delete(processId); 
-        processStateManager.addLog(processId, { level: 'info', message: 'Process cleanup finished.' });
+        activeProcesses.delete(processId);
     }
 }
 
