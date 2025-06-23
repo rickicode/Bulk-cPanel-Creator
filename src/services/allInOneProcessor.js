@@ -139,6 +139,9 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
         if (sshResult && sshResult.adminUsername) {
             cpanelAccountInfo.wpUser = sshResult.adminUsername;
         }
+        if (sshResult && sshResult.magicLink) {
+            cpanelAccountInfo.magicLink = sshResult.magicLink;
+        }
         cpanelAccountInfo.wpPass = config.wpPassword;
 
 
@@ -158,9 +161,10 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
                 domain: domain,
                 adsenseId: adsenseIdNumbers,
                 cpanelUser: cpanelAccountInfo.user,
-                cpanelPass: cpanelAccountInfo.pass,
+                // cpanelPass is intentionally omitted as per user request
                 wpUser: cpanelAccountInfo.wpUser,
                 wpPass: cpanelAccountInfo.wpPass,
+                magicLink: cpanelAccountInfo.magicLink,
             };
             processState.results.success.push(resultObject);
         } else {

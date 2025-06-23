@@ -1277,6 +1277,26 @@ body {
     border-bottom: none;
 }
 
+.credential-group {
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-lg);
+    border-bottom: 1px solid var(--border);
+}
+.credential-group:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+.credential-group h5 {
+    font-size: var(--font-base);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
 .info-row:hover,
 .detail-row:hover {
     background: var(--surface);
@@ -2062,6 +2082,30 @@ body {
 .account-card.failed {
     border-left: 4px solid var(--danger-color);
     background: linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(239, 68, 68, 0.02));
+}
+
+.compact-result-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--surface-hover);
+    border-radius: var(--radius);
+    margin-bottom: var(--spacing-sm);
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+}
+.compact-result-info {
+    display: flex;
+    gap: var(--spacing-lg);
+    flex-wrap: wrap;
+    font-size: var(--font-xs);
+}
+.compact-result-info span {
+    color: var(--text-secondary);
+}
+.compact-result-info strong {
+    color: var(--text-primary);
 }
 
 .account-status.status-success {

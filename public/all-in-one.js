@@ -324,21 +324,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createResultCard(res, isSuccess) {
         const card = document.createElement('div');
-        card.className = `account-card ${isSuccess ? 'success' : 'failed'}`;
         if (isSuccess) {
+            const isMagic = res.magicLink && res.magicLink.includes('tlwp-login');
+            const loginLabel = isMagic ? 'Magic Login' : 'WP Login';
+            const loginClass = isMagic ? 'btn btn-success btn-sm magic-link' : 'btn btn-secondary btn-sm';
+
+            card.className = 'compact-result-card';
             card.innerHTML = `
-                <div class="account-header"><h4 class="account-domain">${res.domain}</h4><span class="account-status status-success">✓ Success</span></div>
-                <div class="account-details">
-                    <div class="detail-row"><span class="detail-label">cPanel User:</span><span class="selectable">${res.cpanelUser}</span><button class="copy-btn" data-copy="${res.cpanelUser}">📋</button></div>
-                    <div class="detail-row"><span class="detail-label">cPanel Pass:</span><span class="selectable password-field">${res.cpanelPass}</span><button class="copy-btn" data-copy="${res.cpanelPass}">📋</button></div>
-                    <div class="detail-row"><span class="detail-label">WP User:</span><span class="selectable">${res.wpUser}</span><button class="copy-btn" data-copy="${res.wpUser}">📋</button></div>
-                    <div class="detail-row"><span class="detail-label">WP Pass:</span><span class="selectable password-field">${res.wpPass}</span><button class="copy-btn" data-copy="${res.wpPass}">📋</button></div>
-                    <div class="detail-row"><span class="detail-label">WP Login:</span><a href="https://${res.domain}/wp-admin/" target="_blank" class="login-link">https://${res.domain}/wp-admin/</a></div>
-                </div>`;
+                <div class="compact-result-info">
+                    <span><strong>${res.domain}</strong></span>
+                    <span>cPanel: <strong>${res.cpanelUser}</strong></span>
+                    <span>WP: <strong>${res.wpUser} / ${res.wpPass}</strong></span>
+                </div>
+                <a href="${res.magicLink}" target="_blank" class="${loginClass}">${loginLabel}</a>
+            `;
         } else {
+            card.className = 'compact-result-card'; // Also style failed items
             card.innerHTML = `
-                <div class="account-header"><h4 class="account-domain">${res.domain}</h4><span class="account-status status-error">✗ Failed</span></div>
-                <div class="account-details"><div class="detail-row error"><span class="detail-label">Error:</span><span class="detail-value">${res.error}</span></div></div>`;
+                <div class="compact-result-info">
+                    <span><strong>${res.domain}</strong></span>
+                    <span class="text-red">Error: <strong>${res.error}</strong></span>
+                </div>
+            `;
         }
         return card;
     }
