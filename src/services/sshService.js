@@ -71,6 +71,11 @@ async function runAllInOneSshTasks(sshConfig, domain, newPassword, adsenseIdNumb
         if (cloneResultCmd.code !== 0) {
             throw new Error(`Clone command failed. STDERR: ${cloneResultCmd.stderr || 'No stderr output'}.`);
         }
+        const cloneResultJson = JSON.parse(cloneResultCmd.stdout.trim());
+        const targetInstanceId = cloneResultJson?.targetInstanceId;
+        if (!targetInstanceId) {
+            throw new Error(`Could not get instance ID for target domain ${domain} from clone output.`);
+        }
 
         // --- Step 2: Get cPanel username ---
         const cpanelUserCmd = `whmapi1 listaccts | awk '/domain: ${domain}/{found=1} found && /user:/{print $2; exit}'`;
@@ -111,63 +116,45 @@ async function runAllInOneSshTasks(sshConfig, domain, newPassword, adsenseIdNumb
             logger.warn(`(Non-fatal) AdSense edit skipped for ${domain}: File not found at ${headerPath}`);
         }
 
-        // --- Step 5: Create Magic Link ---
+        // --- Step 5: Install Plugin Set and Create Magic Link ---
         let magicLink = `https://${domain}/wp-admin/`; // Fallback
         try {
-            const randomEmail = generateRandomEmail(domain);
-            let tlwpCreateCmd = `wp tlwp create --email=${randomEmail} --role=administrator --allow-root --path=${docRoot}`;
-            let tlwpResult = await ssh.execCommand(tlwpCreateCmd);
-
-            // Check if the command failed because the plugin is not installed
-            if (tlwpResult.code !== 0 && tlwpResult.stderr.includes("is not a registered wp-cli command")) {
-                logger.warn(`(Non-fatal) TLWP plugin not found for ${domain}. Attempting to install from local file...`);
-                
-                const localPluginPath = path.join(__dirname, '..', '..', 'temporary-login-without-password.zip');
-                if (!fs.existsSync(localPluginPath)) {
-                    throw new Error(`Plugin installation failed: The file 'temporary-login-without-password.zip' was not found in the project's main folder.`);
-                }
-
-                // Upload local file, install, and activate the plugin
-                const remotePluginPath = '/tmp/tlwp.zip';
-                const pluginSlug = 'temporary-login-without-password'; // The slug from the plugin's main file
-                
-                const installCmd = `wp plugin install ${remotePluginPath} --allow-root --path=${docRoot}`;
-                const activateCmd = `wp plugin activate ${pluginSlug} --allow-root --path=${docRoot}`;
-                const cleanupCmd = `rm ${remotePluginPath}`;
-
-                await ssh.putFile(localPluginPath, remotePluginPath);
-                logger.info(`(Non-fatal) Uploaded ${localPluginPath} to ${remotePluginPath}`);
-                
-                const installResult = await ssh.execCommand(installCmd);
-                if (installResult.code !== 0) {
-                    await ssh.execCommand(cleanupCmd); // Cleanup even if install fails
-                    throw new Error(`Failed to install TLWP plugin. STDERR: ${installResult.stderr}`);
-                }
-
-                const activateResult = await ssh.execCommand(activateCmd);
-                if (activateResult.code !== 0) {
-                    await ssh.execCommand(cleanupCmd); // Cleanup even if activate fails
-                    throw new Error(`Failed to activate TLWP plugin. STDERR: ${activateResult.stderr}`);
-                }
-                
-                // Clean up the remote file after successful installation and activation
-                await ssh.execCommand(cleanupCmd);
-                logger.info(`(Non-fatal) Cleaned up remote file: ${remotePluginPath}`);
-                
-                logger.info(`(Non-fatal) TLWP plugin installed successfully for ${domain}. Retrying magic link creation...`);
-
-                // Retry creating the magic link
-                tlwpResult = await ssh.execCommand(tlwpCreateCmd);
+            // Install the mandatory plugin set
+            logger.info(`Installing plugin set 3 for instance ${targetInstanceId} on domain ${domain}...`);
+            const installSetCmd = `wp-toolkit --sets -operation install -set-id 3 -instance-id ${targetInstanceId}`;
+            const installSetResult = await ssh.execCommand(installSetCmd);
+            if (installSetResult.code !== 0) {
+                // Log as a warning and continue, as magic link might still work if plugin is already there
+                logger.warn(`(Non-fatal) Failed to install plugin set 3 for instance ${targetInstanceId}. STDERR: ${installSetResult.stderr || 'N/A'}`);
+            } else {
+                logger.info(`Successfully installed plugin set 3 for instance ${targetInstanceId}.`);
             }
+
+            // Activate the specific plugin needed for magic links
+            logger.info(`Activating temporary-login-without-password plugin for ${domain}...`);
+            const pluginSlug = 'temporary-login-without-password';
+            const activateCmd = `wp plugin activate ${pluginSlug} --allow-root --path=${docRoot}`;
+            const activateResult = await ssh.execCommand(activateCmd);
+            if (activateResult.code !== 0) {
+                // Log as a warning, as the magic link creation step will provide a more specific error if it fails.
+                logger.warn(`(Non-fatal) Failed to activate ${pluginSlug} for ${domain}. It might already be active. STDERR: ${activateResult.stderr || 'N/A'}`);
+            }
+
+            // Create the magic link
+            const randomEmail = generateRandomEmail(domain);
+            const tlwpCreateCmd = `wp tlwp create --email=${randomEmail} --role=administrator --allow-root --path=${docRoot}`;
+            const tlwpResult = await ssh.execCommand(tlwpCreateCmd);
 
             if (tlwpResult.code === 0 && tlwpResult.stdout.trim()) {
                 const tlwpJson = JSON.parse(tlwpResult.stdout.trim());
                 if (tlwpJson.status === 'success' && tlwpJson.login_url) {
                     magicLink = tlwpJson.login_url;
                 }
+            } else if (tlwpResult.stderr) {
+                logger.warn(`(Non-fatal) Could not generate magic link for ${domain}. STDERR: ${tlwpResult.stderr}`);
             }
         } catch (magicLinkError) {
-            logger.warn(`(Non-fatal) Magic link creation failed for ${domain}: ${magicLinkError.message}`);
+            logger.warn(`(Non-fatal) Magic link creation process failed for ${domain}: ${magicLinkError.message}`);
         }
 
         return { cpanelUser, adminUsername, magicLink };
