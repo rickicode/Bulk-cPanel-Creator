@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let processId = null;
     let pollingInterval = null;
+    let lastLogCount = 0;
 
     // --- Storage Service for localStorage Management ---
     const StorageService = {
@@ -64,9 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Account Setup Functions ---
     function setupCloudflareDropdown() {
         const key = 'bulkCreator_cloudflareAccounts';
+        const selectedKey = 'aio_cloudflareSelected'; // Key for saving the selected index
         const selectEl = elements.cloudflareAccountSelect;
         const deleteBtnEl = elements.deleteCloudflareAccountBtn;
         const accounts = StorageService.load(key) || [];
+        
         selectEl.innerHTML = '<option value="">Select saved account or enter new</option>';
         accounts.forEach((acc, index) => {
             const option = document.createElement('option');
@@ -74,8 +77,18 @@ document.addEventListener('DOMContentLoaded', () => {
             option.textContent = acc.email;
             selectEl.appendChild(option);
         });
+
+        // Restore last selection
+        const savedIndex = StorageService.load(selectedKey);
+        if (savedIndex !== null && selectEl.querySelector(`option[value="${savedIndex}"]`)) {
+            selectEl.value = savedIndex;
+        }
+        // Trigger change to populate fields from restored selection
+        selectEl.dispatchEvent(new Event('change'));
+
         selectEl.addEventListener('change', () => {
             const selectedIndex = selectEl.value;
+            StorageService.save(selectedKey, selectedIndex); // Save selection on change
             if (selectedIndex === '') {
                 elements.cloudflareEmail.value = '';
                 elements.cloudflareApiKey.value = '';
@@ -87,10 +100,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.cloudflareApiKey.value = account.apiKey || '';
             }
         });
+
         deleteBtnEl.addEventListener('click', () => {
             const selectedIndex = selectEl.value;
             if (selectedIndex === '' || !confirm('Are you sure you want to delete this saved Cloudflare account?')) return;
             StorageService.delete(key, parseInt(selectedIndex));
+            StorageService.delete(selectedKey); // Also clear the saved selection
             setupCloudflareDropdown();
             elements.cloudflareEmail.value = '';
             elements.cloudflareApiKey.value = '';
@@ -275,13 +290,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateLogs(logs) {
-        elements.logs.innerHTML = '';
-        logs.forEach(log => {
+        const newLogs = logs.slice(lastLogCount);
+        newLogs.forEach(log => {
             const logEntry = document.createElement('div');
             logEntry.className = `log-entry log-${log.level}`;
             logEntry.textContent = log.message;
             elements.logs.appendChild(logEntry);
         });
+        lastLogCount = logs.length;
+
         if (elements.autoScrollLogs.checked) {
             elements.logs.scrollTop = elements.logs.scrollHeight;
         }
@@ -289,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function displayFinalResults(status) {
         updateLogs(status.logs || []);
-        appendLog('\n--- PROCESS COMPLETE ---');
+        // appendLog('\n--- PROCESS COMPLETE ---'); // Per user request, this is removed to keep logs visible.
         
         const results = status.results || { success: [], failed: [] };
         
@@ -358,6 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.successResults.innerHTML = '';
         elements.failedResults.innerHTML = '';
         elements.validationStatus.textContent = '';
+        lastLogCount = 0; // Reset for new process
     }
 
     function disableForm() {
