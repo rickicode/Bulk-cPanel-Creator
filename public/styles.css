@@ -2130,9 +2130,9 @@ body {
         justify-content: center;
     }
     
-    .results-section-header {
-        flex-direction: column;
-        gap: var(--spacing-sm);
-        align-items: flex-start;
-    }
+.results-section-header {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    align-items: flex-start;
+}
 }

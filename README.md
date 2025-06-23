@@ -57,7 +57,6 @@ This is a highly advanced feature for managing multiple WordPress sites from a s
 *   **Backend**: Node.js, Express.js
 *   **Frontend**: Vanilla JavaScript (ES6 Class-based), HTML5, CSS3
 *   **Key Libraries**:
-    *   `express-rate-limit`: For API rate limiting.
     *   `helmet`: For securing the Express app with various HTTP headers.
     *   `cors`: For Cross-Origin Resource Sharing.
     *   `node-ssh`: For handling SSH connections in the WordPress module.

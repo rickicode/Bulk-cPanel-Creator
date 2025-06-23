@@ -70,6 +70,11 @@ app.get('/cpanel-bulk-delete', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'cpanel-bulk-delete.html'));
 });
 
+// Serve All-in-One page
+app.get('/all-in-one', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'all-in-one.html'));
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   const stats = processStateManager.getStats();

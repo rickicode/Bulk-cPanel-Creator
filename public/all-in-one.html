@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All-in-One Bulk Processor</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body class="wp-admin-changer">
+    <div class="animated-background wave-animation"></div>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <div class="header-brand">
+                    <div class="logo">
+                        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 10V3L4 14h7v7l9-11h-7z" fill="url(#logoGradient)" stroke="#1e40af" stroke-width="0.5"></path><defs><linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2563eb"></stop><stop offset="100%" stop-color="#1d4ed8"></stop></linearGradient></defs></svg>
+                    </div>
+                    <div class="header-text">
+                        <h1 class="title">All-in-One Bulk Processor</h1>
+                        <p class="subtitle">cPanel, Cloudflare, WordPress & AdSense Simultaneous Processing</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <a href="/" class="btn btn-outline">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                        Home
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <section class="config-section">
+                <div class="section-header">
+                    <h2 class="section-title"><span class="step-number">1</span>Configuration</h2>
+                    <p class="section-description">Provide all necessary credentials for the automated process.</p>
+                </div>
+                <form id="config-form">
+                    <div class="config-group">
+                        <h3 class="group-title">Server Credentials (WHM & SSH)</h3>
+                        <div class="form-grid">
+                            <div class="form-field"><label for="whm-host">Server Host</label><input type="text" id="whm-host" placeholder="e.g., 123.45.67.89" required></div>
+                            <div class="form-field"><label for="whm-user">User</label><input type="text" id="whm-user" placeholder="e.g., root" required></div>
+                            <div class="form-field"><label for="whm-password">Password</label><input type="password" id="whm-password" placeholder="Enter server password" required></div>
+                        </div>
+                    </div>
+                    <div class="config-group">
+                        <h3 class="group-title">Cloudflare Credentials</h3>
+                        <div class="form-field full-width">
+                            <label for="cloudflare-account-select">Saved Cloudflare Accounts</label>
+                            <div class="select-with-action">
+                                <select id="cloudflare-account-select"><option value="">Select saved account or enter new</option></select>
+                                <button type="button" id="delete-cloudflare-account-btn" class="btn btn-outline btn-sm" title="Delete selected account">🗑️</button>
+                            </div>
+                            <small class="help-text">💡 Accounts are automatically saved when connection test is successful</small>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-field"><label for="cloudflare-email">Cloudflare Email</label><input type="email" id="cloudflare-email" placeholder="e.g., user@example.com" required></div>
+                            <div class="form-field"><label for="cloudflare-api-key">Cloudflare Global API Key</label><input type="password" id="cloudflare-api-key" placeholder="Enter your Global API Key" required></div>
+                        </div>
+                    </div>
+                    <div class="config-group">
+                        <h3 class="group-title">Operation Details</h3>
+                        <div class="form-grid">
+                            <div class="form-field"><label for="master-clone-domain">Master Clone Domain</label><input type="text" id="master-clone-domain" placeholder="e.g., master.com" required></div>
+                            <div class="form-field"><label for="new-wp-password">New WordPress Admin Password</label><input type="text" id="new-wp-password" placeholder="Enter new secure password" required></div>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="validate-button" class="btn btn-primary">Validate Credentials</button>
+                    </div>
+                    <p id="validation-status" class="status-message"></p>
+                </form>
+            </section>
+
+            <section class="domain-section">
+                <div class="section-header">
+                    <h2 class="section-title"><span class="step-number">2</span>Domain List</h2>
+                    <p class="section-description">Format: <code>domain.com|adsense_id_numbers</code>. The AdSense ID is per-domain.</p>
+                </div>
+                <div class="domain-input-container">
+                    <textarea id="domain-list" class="domain-textarea" placeholder="example.com|1122334455667788&#10;another.net|9988776655443322" rows="10"></textarea>
+                    <div class="form-actions">
+                        <button type="button" id="start-process-button" class="btn btn-success btn-lg" disabled>Start Process</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Progress Monitor Section -->
+            <section id="monitorSection" class="section hidden">
+                <div class="section-header">
+                    <h2 class="section-title">Creation Progress</h2>
+                    <p class="section-description">Monitor the bulk account creation process</p>
+                </div>
+                <div class="progress-container">
+                    <div class="progress-info">
+                        <span id="progressText">Initializing...</span>
+                        <span id="progressPercentage" class="progress-percentage">0%</span>
+                    </div>
+                    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-value" id="total-count">0</div><div class="stat-label">Total</div></div>
+                    <div class="stat-card"><div class="stat-value text-green" id="success-count">0</div><div class="stat-label">Successful</div></div>
+                    <div class="stat-card"><div class="stat-value text-red" id="failed-count">0</div><div class="stat-label">Failed</div></div>
+                    <div class="stat-card"><div class="stat-value text-yellow" id="skipped-count">0</div><div class="stat-label">Skipped</div></div>
+                </div>
+                <div class="logs-section">
+                    <div class="logs-header">
+                        <h3>Process Logs</h3>
+                        <label class="checkbox-label"><input type="checkbox" id="autoScrollLogs" checked> Auto-scroll</label>
+                    </div>
+                    <div id="logs" class="logs-content"></div>
+                </div>
+            </section>
+
+            <!-- Successful Accounts Section -->
+            <section id="successfulAccountsSection" class="section hidden">
+                <div class="section-header"><h2 class="section-title">Successful Operations</h2></div>
+                <div class="summary-actions">
+                    <button id="export-success-txt" class="btn btn-primary">Export Success (TXT)</button>
+                </div>
+                <div id="success-results" class="accounts-list"></div>
+            </section>
+
+            <!-- Failed Accounts Section -->
+            <section id="failedAccountsSection" class="section hidden">
+                <div class="section-header"><h2 class="section-title">Failed Operations</h2></div>
+                 <div class="summary-actions">
+                    <button id="export-failed-txt" class="btn btn-outline">Export Failed (TXT)</button>
+                </div>
+                <div id="failed-results" class="accounts-list"></div>
+            </section>
+        </main>
+    </div>
+    <script src="all-in-one.js"></script>
+</body>
+</html>

@@ -27,6 +27,10 @@ class ProcessStateManager {
         total: 0,
         percentage: 0,
         status: 'starting'
+      },
+      results: {
+        success: [],
+        failed: []
       }
     };
 

@@ -5,6 +5,7 @@ const bulkDeleteRoutes = require('./bulkDelete');
 const processRoutes = require('./process');
 const cloudflareRoutes = require('./cloudflare');
 const wordpressRoutes = require('./wordpress');
+const allInOneRoutes = require('./allInOne');
 
 const router = express.Router();
 
@@ -15,6 +16,7 @@ router.use('/bulk', bulkDeleteRoutes);
 router.use('/process', processRoutes);
 router.use('/cloudflare', cloudflareRoutes);
 router.use('/wordpress', wordpressRoutes);
+router.use('/all-in-one', allInOneRoutes);
 
 // API Info endpoint
 router.get('/', (req, res) => {
