@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Operations
         masterCloneDomain: document.getElementById('master-clone-domain'),
         newWpPassword: document.getElementById('new-wp-password'),
+        createAdsTxt: document.getElementById('create-ads-txt'),
+        adsTxtContainer: document.getElementById('ads-txt-container'),
+        adsTxtContent: document.getElementById('ads-txt-content'),
         // Controls
         validateButton: document.getElementById('validate-button'),
         validationStatus: document.getElementById('validation-status'),
@@ -78,37 +81,38 @@ document.addEventListener('DOMContentLoaded', () => {
             selectEl.appendChild(option);
         });
 
-        // Restore last selection
-        const savedIndex = StorageService.load(selectedKey);
-        if (savedIndex !== null && selectEl.querySelector(`option[value="${savedIndex}"]`)) {
-            selectEl.value = savedIndex;
-        }
-        // Trigger change to populate fields from restored selection
-        selectEl.dispatchEvent(new Event('change'));
-
-        selectEl.addEventListener('change', () => {
-            const selectedIndex = selectEl.value;
-            StorageService.save(selectedKey, selectedIndex); // Save selection on change
-            if (selectedIndex === '') {
+        const populateFields = (index) => {
+            if (index === '' || index === null) {
                 elements.cloudflareEmail.value = '';
                 elements.cloudflareApiKey.value = '';
                 return;
             }
-            const account = accounts[parseInt(selectedIndex)];
+            const account = accounts[parseInt(index)];
             if (account) {
                 elements.cloudflareEmail.value = account.email || '';
                 elements.cloudflareApiKey.value = account.apiKey || '';
             }
+        };
+
+        const savedIndex = StorageService.load(selectedKey);
+        if (savedIndex !== null && selectEl.querySelector(`option[value="${savedIndex}"]`)) {
+            selectEl.value = savedIndex;
+            populateFields(savedIndex);
+        }
+
+        selectEl.addEventListener('change', () => {
+            const selectedIndex = selectEl.value;
+            StorageService.save(selectedKey, selectedIndex);
+            populateFields(selectedIndex);
         });
 
         deleteBtnEl.addEventListener('click', () => {
             const selectedIndex = selectEl.value;
             if (selectedIndex === '' || !confirm('Are you sure you want to delete this saved Cloudflare account?')) return;
             StorageService.delete(key, parseInt(selectedIndex));
-            StorageService.delete(selectedKey); // Also clear the saved selection
+            StorageService.delete(selectedKey);
             setupCloudflareDropdown();
-            elements.cloudflareEmail.value = '';
-            elements.cloudflareApiKey.value = '';
+            populateFields('');
         });
     }
 
@@ -197,6 +201,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    elements.createAdsTxt.addEventListener('change', () => {
+        elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
+    });
+
     elements.startProcessButton.addEventListener('click', async () => {
         const domains = elements.domainList.value.trim().split('\n').filter(line => line.trim() !== '');
         if (domains.length === 0) return alert('Domain list cannot be empty.');
@@ -211,6 +219,8 @@ document.addEventListener('DOMContentLoaded', () => {
             cloudflare: { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value },
             wpPassword: elements.newWpPassword.value,
             masterCloneDomain: elements.masterCloneDomain.value,
+            createAdsTxt: elements.createAdsTxt.checked,
+            adsTxtContent: elements.adsTxtContent.value,
             domains: domains,
         };
 

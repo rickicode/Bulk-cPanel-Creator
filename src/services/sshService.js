@@ -166,7 +166,52 @@ async function runAllInOneSshTasks(sshConfig, domain, newPassword, adsenseIdNumb
     }
 }
 
+/**
+ * Creates or replaces the ads.txt file on a domain via SSH.
+ * @param {object} sshConfig - { host, username, password }
+ * @param {string} domain - The target domain.
+ * @param {string} content - The content to write to the ads.txt file.
+ */
+async function createAdsTxtFile(sshConfig, domain, content) {
+    const ssh = new NodeSSH();
+    await ssh.connect({
+        host: sshConfig.host,
+        username: sshConfig.username,
+        password: sshConfig.password,
+        tryKeyboard: true,
+    });
+
+    try {
+        // First, get the cPanel username to determine the document root
+        const cpanelUserCmd = `whmapi1 listaccts | awk '/domain: ${domain}/{found=1} found && /user:/{print $2; exit}'`;
+        const cpanelUserResult = await ssh.execCommand(cpanelUserCmd);
+        if (cpanelUserResult.code !== 0 || !cpanelUserResult.stdout.trim()) {
+            throw new Error(`Failed to get cPanel user for ${domain} to create ads.txt. STDERR: ${cpanelUserResult.stderr || 'N/A'}`);
+        }
+        const cpanelUser = cpanelUserResult.stdout.trim();
+        const adsTxtPath = `/home/${cpanelUser}/public_html/ads.txt`;
+
+        // Use a temporary local file to handle content with special characters
+        const tempFilePath = path.join(__dirname, `temp_ads_${domain}.txt`);
+        fs.writeFileSync(tempFilePath, content);
+
+        // Upload the file
+        await ssh.putFile(tempFilePath, adsTxtPath);
+
+        // Clean up the temporary file
+        fs.unlinkSync(tempFilePath);
+
+    } catch (error) {
+        throw new Error(`Failed to create ads.txt for ${domain}: ${error.message}`);
+    } finally {
+        if (ssh.isConnected()) {
+            await ssh.dispose();
+        }
+    }
+}
+
 module.exports = {
     validateSshCredentials,
     runAllInOneSshTasks,
+    createAdsTxtFile,
 };

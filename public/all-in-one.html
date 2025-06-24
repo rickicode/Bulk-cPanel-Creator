@@ -67,6 +67,20 @@
                             <div class="form-field"><label for="master-clone-domain">Master Clone Domain</label><input type="text" id="master-clone-domain" placeholder="e.g., master.com" required></div>
                             <div class="form-field"><label for="new-wp-password">New WordPress Admin Password</label><input type="text" id="new-wp-password" placeholder="Enter new secure password" required></div>
                         </div>
+                        <div class="form-field">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="create-ads-txt">
+                                Create/Replace ads.txt
+                            </label>
+                        </div>
+                        <div class="form-field hidden" id="ads-txt-container" style="padding-top: 15px;">
+                            <!-- <label for="ads-txt-content">ads.txt Content</label> -->
+                            <textarea id="ads-txt-content" class="domain-textarea" rows="5" placeholder="google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"></textarea>
+                            <small class="help-text">
+                                Enter one line per authorized seller. For more information, see the official 
+                                <a href="https://iabtechlab.com/ads-txt/" target="_blank" rel="noopener noreferrer">ads.txt specification</a>.
+                            </small>
+                        </div>
                     </div>
                     <div class="form-actions">
                         <button type="button" id="validate-button" class="btn btn-primary">Validate Credentials</button>

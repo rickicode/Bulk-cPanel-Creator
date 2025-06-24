@@ -133,6 +133,13 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
         log('info', 'Stage: Cloning and configuring WordPress...');
         const sshResult = await sshService.runAllInOneSshTasks(config.ssh, domain, config.wpPassword, adsenseIdNumbers, config.masterCloneDomain);
         
+        // Step 4: Create ads.txt if requested
+        if (config.createAdsTxt && config.adsTxtContent) {
+            log('info', 'Stage: Creating ads.txt file...');
+            await sshService.createAdsTxtFile(config.ssh, domain, config.adsTxtContent);
+            log('info', 'ads.txt file created/updated successfully.');
+        }
+
         // Update the cpanel user info with the one discovered by the SSH script, if it exists
         if (sshResult && sshResult.cpanelUser) {
             cpanelAccountInfo.user = sshResult.cpanelUser;

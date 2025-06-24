@@ -23,7 +23,7 @@ router.post('/validate', async (req, res) => {
 
 // Route to start the all-in-one process
 router.post('/start', (req, res) => {
-    const { whm, cloudflare, wpPassword, masterCloneDomain, domains } = req.body;
+    const { whm, cloudflare, wpPassword, masterCloneDomain, domains, createAdsTxt, adsTxtContent } = req.body;
 
     // Basic validation
     if (!whm || !cloudflare || !wpPassword || !masterCloneDomain || !Array.isArray(domains) || domains.length === 0) {
@@ -48,7 +48,7 @@ router.post('/start', (req, res) => {
     req.processStateManager.startProcess(processId, processInfo);
 
     // Start the async process without awaiting it
-    startAllInOneProcess(processId, { whm, cloudflare, ssh, wpPassword, masterCloneDomain, domains }, req.processStateManager);
+    startAllInOneProcess(processId, { whm, cloudflare, ssh, wpPassword, masterCloneDomain, domains, createAdsTxt, adsTxtContent }, req.processStateManager);
 
     res.status(202).json({ message: 'Process started', processId });
 });

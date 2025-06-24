@@ -1636,7 +1636,64 @@ body {
 }
 
 .checkbox-label input[type="checkbox"] {
-    margin-right: var(--spacing-sm);
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.checkbox-label {
+    position: relative;
+    padding-left: 28px; /* space for custom checkbox */
+    cursor: pointer;
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+}
+
+/* Custom checkbox box */
+.checkbox-label::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-light);
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+}
+
+/* Hover state */
+.checkbox-label:hover::before {
+    border-color: var(--primary-color);
+}
+
+/* Checked state */
+.checkbox-label:has(input[type="checkbox"]:checked)::before {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* Checkmark */
+.checkbox-label::after {
+    content: '✓';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%) scale(0);
+    font-size: 14px;
+    color: white;
+    font-weight: bold;
+    transition: transform 0.2s ease;
+}
+
+.checkbox-label:has(input[type="checkbox"]:checked)::after {
+    transform: translateY(-50%) scale(1);
 }
 
 /* Responsive Design */
