@@ -141,6 +141,8 @@ document.addEventListener('DOMContentLoaded', () => {
             masterCloneDomain: elements.masterCloneDomain.value,
             newWpPassword: elements.newWpPassword.value,
             domainList: elements.domainList.value,
+            createAdsTxt: elements.createAdsTxt.checked,
+            adsTxtContent: elements.adsTxtContent.value,
         };
         StorageService.save('aio_operationDetails', opDetails);
     }
@@ -151,26 +153,44 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.masterCloneDomain.value = opDetails.masterCloneDomain || '';
             elements.newWpPassword.value = opDetails.newWpPassword || '';
             elements.domainList.value = opDetails.domainList || '';
+            elements.createAdsTxt.checked = opDetails.createAdsTxt || false;
+            elements.adsTxtContent.value = opDetails.adsTxtContent || '';
+            // Ensure the ads.txt container visibility is updated based on the loaded state
+            elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
         }
     }
     
     function saveCloudflareCredentials() {
         const key = 'bulkCreator_cloudflareAccounts';
+        const selectedKey = 'aio_cloudflareSelected';
         const accounts = StorageService.load(key) || [];
         const newAccount = { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value };
-        const existingIndex = accounts.findIndex(a => a.email === newAccount.email);
-        if (existingIndex > -1) {
-            accounts[existingIndex] = newAccount;
+
+        if (!newAccount.email || !newAccount.apiKey) return;
+
+        let savedAccountIndex = accounts.findIndex(a => a.email === newAccount.email);
+
+        if (savedAccountIndex > -1) {
+            accounts[savedAccountIndex] = newAccount;
         } else {
             accounts.push(newAccount);
+            savedAccountIndex = accounts.length - 1;
         }
+
         StorageService.save(key, accounts);
-        setupCloudflareDropdown();
+        StorageService.save(selectedKey, savedAccountIndex); // Save the index of the just-saved account
+
+        setupCloudflareDropdown(); // This will now rebuild the dropdown AND select the correct item
     }
 
     // --- Event Listeners ---
-    ['masterCloneDomain', 'newWpPassword', 'domainList'].forEach(id => {
+    ['masterCloneDomain', 'newWpPassword', 'domainList', 'adsTxtContent'].forEach(id => {
         elements[id].addEventListener('input', saveOperationDetails);
+    });
+
+    elements.createAdsTxt.addEventListener('change', () => {
+        elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
+        saveOperationDetails(); // Save state on change
     });
 
     elements.validateButton.addEventListener('click', async () => {
@@ -201,15 +221,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    elements.createAdsTxt.addEventListener('change', () => {
-        elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
-    });
 
     elements.startProcessButton.addEventListener('click', async () => {
         const domains = elements.domainList.value.trim().split('\n').filter(line => line.trim() !== '');
         if (domains.length === 0) return alert('Domain list cannot be empty.');
-        const invalidLines = domains.filter(line => !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\|[0-9]{16}$/.test(line.trim()));
-        if (invalidLines.length > 0) return alert(`Invalid format on lines:\n${invalidLines.join('\n')}\nPlease use the format: domain.com|1234567890123456 (AdSense ID must be 16 digits)`);
+        const invalidLines = domains.filter(line => !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\|[0-9]{16})?$/.test(line.trim()));
+        if (invalidLines.length > 0) return alert(`Invalid format on lines:\n${invalidLines.join('\n')}\nPlease use the format: domain.com or domain.com|1234567890123456`);
         
         disableForm();
         resetUI();

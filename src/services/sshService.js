@@ -100,20 +100,24 @@ async function runAllInOneSshTasks(sshConfig, domain, newPassword, adsenseIdNumb
             throw new Error(`Failed to update WP password for ${domain}. STDERR: ${updatePasswordResult.stderr || 'N/A'}`);
         }
 
-        // --- Step 4: Update AdSense ID ---
-        const headerPath = `/home/${cpanelUser}/public_html/wp-content/themes/superfast/header.php`;
-        const checkFileCmd = `if [ -f "${headerPath}" ]; then echo "exists"; fi`;
-        const fileCheckResult = await ssh.execCommand(checkFileCmd);
-        if (fileCheckResult.stdout.trim() === "exists") {
-            const escapedAdsenseId = adsenseIdNumbers.replace(/[&/\\$'"]/g, '\\$&');
-            const oldAdsensePattern = "[0-9]\\{16\\}";
-            const sedCmd = `sed -i.bak_sed "s#\\(<script async src=\\"https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-\\)${oldAdsensePattern}\\(\\"\\)#\\1${escapedAdsenseId}\\2#g" "${headerPath}"`;
-            const editResult = await ssh.execCommand(sedCmd);
-            if (editResult.code !== 0) {
-                logger.warn(`(Non-fatal) Failed to edit AdSense ID in ${headerPath}. STDERR: ${editResult.stderr}`);
+        // --- Step 4: Update AdSense ID (only if provided) ---
+        if (adsenseIdNumbers) {
+            const headerPath = `/home/${cpanelUser}/public_html/wp-content/themes/superfast/header.php`;
+            const checkFileCmd = `if [ -f "${headerPath}" ]; then echo "exists"; fi`;
+            const fileCheckResult = await ssh.execCommand(checkFileCmd);
+            if (fileCheckResult.stdout.trim() === "exists") {
+                const escapedAdsenseId = adsenseIdNumbers.replace(/[&/\\$'"]/g, '\\$&');
+                const oldAdsensePattern = "[0-9]\\{16\\}";
+                const sedCmd = `sed -i.bak_sed "s#\\(<script async src=\\"https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-\\)${oldAdsensePattern}\\(\\"\\)#\\1${escapedAdsenseId}\\2#g" "${headerPath}"`;
+                const editResult = await ssh.execCommand(sedCmd);
+                if (editResult.code !== 0) {
+                    logger.warn(`(Non-fatal) Failed to edit AdSense ID in ${headerPath}. STDERR: ${editResult.stderr}`);
+                }
+            } else {
+                logger.warn(`(Non-fatal) AdSense edit skipped for ${domain}: File not found at ${headerPath}`);
             }
         } else {
-            logger.warn(`(Non-fatal) AdSense edit skipped for ${domain}: File not found at ${headerPath}`);
+            logger.info(`AdSense ID not provided for ${domain}, skipping update.`);
         }
 
         // --- Step 5: Install Plugin Set and Create Magic Link ---

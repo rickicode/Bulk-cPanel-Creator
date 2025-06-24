@@ -84,7 +84,7 @@ async function startAllInOneProcess(processId, config, processStateManager) {
  * @param {ProcessStateManager} processStateManager - The shared process state manager instance.
  */
 async function processDomain(processId, domainEntry, config, whm, cloudflare, processStateManager) {
-    const [domain, adsenseIdNumbers] = domainEntry.split('|');
+    const [domain, adsenseIdNumbers] = domainEntry.includes('|') ? domainEntry.split('|') : [domainEntry, null];
     const processState = processStateManager.getProcessStatus(processId);
 
     const log = (level, message, data = {}) => {
