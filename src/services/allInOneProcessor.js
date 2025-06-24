@@ -85,6 +85,7 @@ async function startAllInOneProcess(processId, config, processStateManager) {
  */
 async function processDomain(processId, domainEntry, config, whm, cloudflare, processStateManager) {
     const [domain, adsenseIdNumbers] = domainEntry.includes('|') ? domainEntry.split('|') : [domainEntry, null];
+    const { cloneMasterDomain } = config;
     const processState = processStateManager.getProcessStatus(processId);
 
     const log = (level, message, data = {}) => {
@@ -130,8 +131,14 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
         cpanelAccountInfo = { user: cpanelUser, pass: cpanelPass };
 
         // Step 3: Perform SSH tasks (Clone, WP Password, AdSense)
-        log('info', 'Stage: Cloning and configuring WordPress...');
-        const sshResult = await sshService.runAllInOneSshTasks(config.ssh, domain, config.wpPassword, adsenseIdNumbers, config.masterCloneDomain);
+        let sshResult;
+        if (cloneMasterDomain) {
+            log('info', 'Stage: Cloning and configuring WordPress...');
+            sshResult = await sshService.runAllInOneSshTasks(config.ssh, domain, config.wpPassword, adsenseIdNumbers, config.masterCloneDomain);
+        } else {
+            log('info', 'Stage: Configuring WordPress (cloning skipped)...');
+            sshResult = await sshService.runSshTasksWithoutCloning(config.ssh, domain, config.wpPassword, adsenseIdNumbers);
+        }
         
         // Step 4: Create ads.txt if requested
         if (config.createAdsTxt && config.adsTxtContent) {

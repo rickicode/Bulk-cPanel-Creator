@@ -1132,8 +1132,10 @@ class CpanelBulkDelete {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    email,
-                    apiKey
+                    cloudflareCredentials: {
+                        email,
+                        apiKey
+                    }
                 })
             });
 

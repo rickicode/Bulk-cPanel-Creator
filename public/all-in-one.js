@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteCloudflareAccountBtn: document.getElementById('delete-cloudflare-account-btn'),
         // Operations
         masterCloneDomain: document.getElementById('master-clone-domain'),
+        cloneMasterDomain: document.getElementById('clone-master-domain'),
         newWpPassword: document.getElementById('new-wp-password'),
         createAdsTxt: document.getElementById('create-ads-txt'),
         adsTxtContainer: document.getElementById('ads-txt-container'),
@@ -143,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
             domainList: elements.domainList.value,
             createAdsTxt: elements.createAdsTxt.checked,
             adsTxtContent: elements.adsTxtContent.value,
+            cloneMasterDomain: elements.cloneMasterDomain.checked,
         };
         StorageService.save('aio_operationDetails', opDetails);
     }
@@ -155,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.domainList.value = opDetails.domainList || '';
             elements.createAdsTxt.checked = opDetails.createAdsTxt || false;
             elements.adsTxtContent.value = opDetails.adsTxtContent || '';
+            elements.cloneMasterDomain.checked = opDetails.hasOwnProperty('cloneMasterDomain') ? opDetails.cloneMasterDomain : true;
             // Ensure the ads.txt container visibility is updated based on the loaded state
             elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
         }
@@ -188,6 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elements[id].addEventListener('input', saveOperationDetails);
     });
 
+    elements.cloneMasterDomain.addEventListener('change', saveOperationDetails);
     elements.createAdsTxt.addEventListener('change', () => {
         elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
         saveOperationDetails(); // Save state on change
@@ -236,6 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cloudflare: { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value },
             wpPassword: elements.newWpPassword.value,
             masterCloneDomain: elements.masterCloneDomain.value,
+            cloneMasterDomain: elements.cloneMasterDomain.checked,
             createAdsTxt: elements.createAdsTxt.checked,
             adsTxtContent: elements.adsTxtContent.value,
             domains: domains,
