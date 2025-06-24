@@ -14,9 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
         masterCloneDomain: document.getElementById('master-clone-domain'),
         cloneMasterDomain: document.getElementById('clone-master-domain'),
         newWpPassword: document.getElementById('new-wp-password'),
-        createAdsTxt: document.getElementById('create-ads-txt'),
-        adsTxtContainer: document.getElementById('ads-txt-container'),
-        adsTxtContent: document.getElementById('ads-txt-content'),
         // Controls
         validateButton: document.getElementById('validate-button'),
         validationStatus: document.getElementById('validation-status'),
@@ -142,8 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
             masterCloneDomain: elements.masterCloneDomain.value,
             newWpPassword: elements.newWpPassword.value,
             domainList: elements.domainList.value,
-            createAdsTxt: elements.createAdsTxt.checked,
-            adsTxtContent: elements.adsTxtContent.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
         };
         StorageService.save('aio_operationDetails', opDetails);
@@ -155,11 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.masterCloneDomain.value = opDetails.masterCloneDomain || '';
             elements.newWpPassword.value = opDetails.newWpPassword || '';
             elements.domainList.value = opDetails.domainList || '';
-            elements.createAdsTxt.checked = opDetails.createAdsTxt || false;
-            elements.adsTxtContent.value = opDetails.adsTxtContent || '';
             elements.cloneMasterDomain.checked = opDetails.hasOwnProperty('cloneMasterDomain') ? opDetails.cloneMasterDomain : true;
-            // Ensure the ads.txt container visibility is updated based on the loaded state
-            elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
         }
     }
     
@@ -187,15 +178,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Event Listeners ---
-    ['masterCloneDomain', 'newWpPassword', 'domainList', 'adsTxtContent'].forEach(id => {
+    ['masterCloneDomain', 'newWpPassword', 'domainList'].forEach(id => {
         elements[id].addEventListener('input', saveOperationDetails);
     });
 
     elements.cloneMasterDomain.addEventListener('change', saveOperationDetails);
-    elements.createAdsTxt.addEventListener('change', () => {
-        elements.adsTxtContainer.classList.toggle('hidden', !elements.createAdsTxt.checked);
-        saveOperationDetails(); // Save state on change
-    });
 
     elements.validateButton.addEventListener('click', async () => {
         elements.validationStatus.textContent = 'Validating...';
@@ -229,8 +216,8 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.startProcessButton.addEventListener('click', async () => {
         const domains = elements.domainList.value.trim().split('\n').filter(line => line.trim() !== '');
         if (domains.length === 0) return alert('Domain list cannot be empty.');
-        const invalidLines = domains.filter(line => !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\|[0-9]{16})?$/.test(line.trim()));
-        if (invalidLines.length > 0) return alert(`Invalid format on lines:\n${invalidLines.join('\n')}\nPlease use the format: domain.com or domain.com|1234567890123456`);
+        const invalidLines = domains.filter(line => !/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\|[0-9]+(#\d+)*)?$/.test(line.trim()));
+        if (invalidLines.length > 0) return alert(`Invalid format on lines:\n${invalidLines.join('\n')}\nPlease use the format: domain.com|12345#67890`);
         
         disableForm();
         resetUI();
@@ -241,8 +228,6 @@ document.addEventListener('DOMContentLoaded', () => {
             wpPassword: elements.newWpPassword.value,
             masterCloneDomain: elements.masterCloneDomain.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
-            createAdsTxt: elements.createAdsTxt.checked,
-            adsTxtContent: elements.adsTxtContent.value,
             domains: domains,
         };
 

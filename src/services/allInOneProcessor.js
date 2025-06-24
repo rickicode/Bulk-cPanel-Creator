@@ -130,20 +130,25 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
         }
         cpanelAccountInfo = { user: cpanelUser, pass: cpanelPass };
 
-        // Step 3: Perform SSH tasks (Clone, WP Password, AdSense)
+        // Step 3: Perform SSH tasks (Clone, WP Password, and conditional AdSense)
         let sshResult;
+        // Only pass adsense ID for header.php modification if it's a single ID (no '#')
+        const adsenseIdForHeader = (adsenseIdNumbers && !adsenseIdNumbers.includes('#')) ? adsenseIdNumbers : null;
+        
         if (cloneMasterDomain) {
             log('info', 'Stage: Cloning and configuring WordPress...');
-            sshResult = await sshService.runAllInOneSshTasks(config.ssh, domain, config.wpPassword, adsenseIdNumbers, config.masterCloneDomain);
+            sshResult = await sshService.runAllInOneSshTasks(config.ssh, domain, config.wpPassword, adsenseIdForHeader, config.masterCloneDomain);
         } else {
             log('info', 'Stage: Configuring WordPress (cloning skipped)...');
-            sshResult = await sshService.runSshTasksWithoutCloning(config.ssh, domain, config.wpPassword, adsenseIdNumbers);
+            sshResult = await sshService.runSshTasksWithoutCloning(config.ssh, domain, config.wpPassword, adsenseIdForHeader);
         }
         
-        // Step 4: Create ads.txt if requested
-        if (config.createAdsTxt && config.adsTxtContent) {
+        // Step 4: Create ads.txt from domain entry
+        if (adsenseIdNumbers) {
             log('info', 'Stage: Creating ads.txt file...');
-            await sshService.createAdsTxtFile(config.ssh, domain, config.adsTxtContent);
+            const adsenseIds = adsenseIdNumbers.split('#');
+            const adsTxtContent = adsenseIds.map(id => `google.com, pub-${id}, DIRECT, f08c47fec0942fa0`).join('\n');
+            await sshService.createAdsTxtFile(config.ssh, domain, adsTxtContent);
             log('info', 'ads.txt file created/updated successfully.');
         }
 

@@ -86,20 +86,6 @@
                                 Clone Master Domain
                             </label>
                         </div>
-                        <div class="form-field">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="create-ads-txt">
-                                Create/Replace ads.txt
-                            </label>
-                        </div>
-                        <div class="form-field hidden" id="ads-txt-container" style="padding-top: 15px;">
-                            <!-- <label for="ads-txt-content">ads.txt Content</label> -->
-                            <textarea id="ads-txt-content" class="domain-textarea" rows="5" placeholder="google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"></textarea>
-                            <small class="help-text">
-                                Enter one line per authorized seller. For more information, see the official 
-                                <a href="https://iabtechlab.com/ads-txt/" target="_blank" rel="noopener noreferrer">ads.txt specification</a>.
-                            </small>
-                        </div>
                     </div>
                     <div class="form-actions">
                         <button type="button" id="validate-button" class="btn btn-primary">Validate Credentials</button>
@@ -111,10 +97,10 @@
             <section class="domain-section">
                 <div class="section-header">
                     <h2 class="section-title"><span class="step-number">2</span>Domain List</h2>
-                    <p class="section-description">Format: <code>domain.com|adsense_id_numbers</code>. The AdSense ID is per-domain.</p>
+                    <p class="section-description">Format: <code>domain.com|kodeadnsen#kodeadsense2</code>. The AdSense IDs are per-domain and will be used to generate <code>ads.txt</code>.</p>
                 </div>
                 <div class="domain-input-container">
-                    <textarea id="domain-list" class="domain-textarea" placeholder="example.com|1122334455667788&#10;another.net|9988776655443322" rows="10"></textarea>
+                    <textarea id="domain-list" class="domain-textarea" placeholder="domain.com|6453023764659564#6453023764659512&#10;another.net|6453023764259515" rows="10"></textarea>
                     <div class="form-actions">
                         <button type="button" id="start-process-button" class="btn btn-success btn-lg" disabled>Start Process</button>
                     </div>
