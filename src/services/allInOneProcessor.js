@@ -1,6 +1,6 @@
 const WHMApi = require('./whmApi');
 const CloudflareApi = require('./cloudflareApi');
-const sshService = require('./sshService');
+const { SshSession, validateSshCredentials: validateSsh } = require('./sshService');
 
 // Use the same concurrency setting as the other tools for consistency.
 const CONCURRENCY_LIMIT = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS, 10) || 10;
@@ -19,7 +19,7 @@ async function validateAllCredentials(whmConfig, cloudflareConfig, sshConfig) {
         const [whmResult, cfResult, sshResult] = await Promise.allSettled([
             whm.testConnection(),
             cloudflare.testConnection(),
-            sshService.validateSshCredentials(sshConfig),
+            validateSsh(sshConfig),
         ]);
 
         if (whmResult.status === 'rejected' || (whmResult.value && !whmResult.value.success)) {
@@ -75,7 +75,7 @@ async function startAllInOneProcess(processId, config, processStateManager) {
 }
 
 /**
- * Processes a single domain through all the required steps.
+ * Processes a single domain through all the required steps with a retry mechanism.
  * @param {string} processId - The unique ID for this process.
  * @param {string} domainEntry - The domain string, e.g., "domain.com|1234567890"
  * @param {object} config - The configuration object.
@@ -87,7 +87,6 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
     const [domain, adsenseIdNumbers] = domainEntry.includes('|') ? domainEntry.split('|') : [domainEntry, null];
     const { cloneMasterDomain } = config;
     const processState = processStateManager.getProcessStatus(processId);
-
     const log = (level, message, data = {}) => {
         processStateManager.addLog(processId, { level, message: `[${domain}] ${message}`, data });
     };
@@ -95,110 +94,134 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
     let success = false;
     let cpanelAccountInfo = {};
     let finalError = null;
+    const maxRetries = 3;
+    const retryDelay = 2000; // 2 seconds
 
-    try {
-        log('info', 'Processing started...');
-        processStateManager.updateProgress(processId, { ...processState.progress, currentItem: domain });
+    processStateManager.updateProgress(processId, { ...processState.progress, currentItem: domain });
 
-        // Step 1: Add DNS record to Cloudflare
-        log('info', 'Stage: Configuring DNS...');
-        cloudflare.recordValue = config.whm.host;
-        const dnsResult = await cloudflare.addOrUpdateDnsRecord(domain);
-        if (!dnsResult.success) {
-            throw new Error(`Cloudflare DNS failed: ${dnsResult.error}`);
-        }
-
-        // Step 2: Check for and/or Create cPanel Account
-        let cpanelUser;
-        let cpanelPass = '********'; // Default password placeholder
-        log('info', 'Stage: Preparing cPanel Account...');
-        const checkResult = await whm.checkDomainExists(domain);
-        if (checkResult.exists) {
-            log('warn', 'cPanel account already exists. Skipping creation.');
-            cpanelUser = '(existing user)';
-        } else {
-            const username = domain.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8) + Math.random().toString(36).substring(2, 6);
-            const password = Math.random().toString(36).slice(-10) + 'A1!';
-            const accountDetails = { domain, username, password, plan: 'default' };
-            
-            const createResult = await whm.createAccount(accountDetails);
-            if (!createResult.success) {
-                throw new Error(`cPanel creation failed: ${createResult.error}`);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const sshSession = new SshSession(config.ssh);
+        try {
+            if (attempt > 1) {
+                log('info', `--- Starting attempt ${attempt} of ${maxRetries} ---`);
+            } else {
+                log('info', 'Processing started...');
             }
-            cpanelUser = username;
-            cpanelPass = password;
-        }
-        cpanelAccountInfo = { user: cpanelUser, pass: cpanelPass };
 
-        // Step 3: Perform SSH tasks (Clone, WP Password, and conditional AdSense)
-        let sshResult;
-        // Only pass adsense ID for header.php modification if it's a single ID (no '#')
-        const adsenseIdForHeader = (adsenseIdNumbers && !adsenseIdNumbers.includes('#')) ? adsenseIdNumbers : null;
-        
-        if (cloneMasterDomain) {
-            log('info', 'Stage: Cloning and configuring WordPress...');
-            sshResult = await sshService.runAllInOneSshTasks(config.ssh, domain, config.wpPassword, adsenseIdForHeader, config.masterCloneDomain);
-        } else {
-            log('info', 'Stage: Configuring WordPress (cloning skipped)...');
-            sshResult = await sshService.runSshTasksWithoutCloning(config.ssh, domain, config.wpPassword, adsenseIdForHeader);
-        }
-        
-        // Step 4: Create ads.txt from domain entry
-        if (adsenseIdNumbers) {
-            log('info', 'Stage: Creating ads.txt file...');
-            const adsenseIds = adsenseIdNumbers.split('#');
-            const adsTxtContent = adsenseIds.map(id => `google.com, pub-${id}, DIRECT, f08c47fec0942fa0`).join('\n');
-            await sshService.createAdsTxtFile(config.ssh, domain, adsTxtContent);
-            log('info', 'ads.txt file created/updated successfully.');
-        }
+            // Step 1: Add DNS record to Cloudflare
+            log('info', 'Stage: Configuring DNS...');
+            cloudflare.recordValue = config.whm.host;
+            const dnsResult = await cloudflare.addOrUpdateDnsRecord(domain);
+            if (!dnsResult.success) throw new Error(`Cloudflare DNS failed: ${dnsResult.error}`);
 
-        // Update the cpanel user info with the one discovered by the SSH script, if it exists
-        if (sshResult && sshResult.cpanelUser) {
-            cpanelAccountInfo.user = sshResult.cpanelUser;
-        }
-        if (sshResult && sshResult.adminUsername) {
-            cpanelAccountInfo.wpUser = sshResult.adminUsername;
-        }
-        if (sshResult && sshResult.magicLink) {
-            cpanelAccountInfo.magicLink = sshResult.magicLink;
-        }
-        cpanelAccountInfo.wpPass = config.wpPassword;
+            // Step 2: Check for and/or Create cPanel Account
+            let cpanelUser;
+            let cpanelPass = '********';
+            log('info', 'Stage: Preparing cPanel Account...');
+            
+            let shouldCreate = true;
+            const checkResult = await whm.checkDomainExists(domain);
 
+            if (checkResult.exists) {
+                if (config.forceRecreate) {
+                    log('warn', 'cPanel account already exists. Force Recreate is enabled. Terminating account...');
+                    const terminateResult = await whm.terminateAccountByDomain(domain);
+                    if (!terminateResult.success) {
+                        throw new Error(`Failed to terminate existing account for recreation: ${terminateResult.error}`);
+                    }
+                    log('info', 'Existing account terminated successfully. Proceeding with creation.');
+                } else {
+                    log('warn', 'cPanel account already exists. Skipping creation as Force Recreate is disabled.');
+                    cpanelUser = '(existing user)';
+                    shouldCreate = false;
+                }
+            }
 
-        success = true;
-        log('info', 'All operations completed successfully.');
+            if (shouldCreate) {
+                const username = domain.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8) + Math.random().toString(36).substring(2, 6);
+                const password = config.wpPassword;
+                const accountDetails = { domain, username, password, plan: 'default' };
+                const createResult = await whm.createAccount(accountDetails);
+                if (!createResult.success) throw new Error(`cPanel creation failed: ${createResult.error}`);
+                cpanelUser = username;
+                cpanelPass = password;
+            }
+            cpanelAccountInfo = { user: cpanelUser, pass: cpanelPass };
 
-    } catch (error) {
-        finalError = error;
-        log('error', `Operation failed: ${error.message}`, { error: error.stack });
-    } finally {
-        const currentProgress = processStateManager.getProcessStatus(processId).progress;
-        const newProgress = { ...currentProgress, current: currentProgress.current + 1 };
+            // Connect SSH for all subsequent operations
+            await sshSession.connect();
 
-        if (success) {
-            newProgress.successful++;
-            const resultObject = {
-                domain: domain,
-                adsenseId: adsenseIdNumbers,
-                cpanelUser: cpanelAccountInfo.user,
-                // cpanelPass is intentionally omitted as per user request
-                wpUser: cpanelAccountInfo.wpUser,
-                wpPass: cpanelAccountInfo.wpPass,
-                magicLink: cpanelAccountInfo.magicLink,
-            };
-            processState.results.success.push(resultObject);
-        } else {
-            newProgress.failed++;
-            const errorMessage = finalError ? finalError.message : 'An unknown error occurred.';
-            processState.results.failed.push({
-                domain: domain,
-                adsenseId: adsenseIdNumbers,
-                error: errorMessage,
-            });
+            // Step 3: Perform SSH tasks
+            const adsenseIdForHeader = (adsenseIdNumbers && !adsenseIdNumbers.includes('#')) ? adsenseIdNumbers : null;
+            let sshResult;
+            if (cloneMasterDomain) {
+                log('info', 'Stage: Cloning and configuring WordPress...');
+                sshResult = await sshSession.runAllInOneSshTasks(domain, config.wpPassword, adsenseIdForHeader, config.masterCloneDomain);
+            } else {
+                log('info', 'Stage: Configuring WordPress (cloning skipped)...');
+                sshResult = await sshSession.runSshTasksWithoutCloning(domain, config.wpPassword, adsenseIdForHeader);
+            }
+
+            // Step 4: Create ads.txt
+            if (adsenseIdNumbers) {
+                log('info', 'Stage: Creating ads.txt file...');
+                const adsenseIds = adsenseIdNumbers.split('#');
+                const adsTxtContent = adsenseIds.map(id => `google.com, pub-${id}, DIRECT, f08c47fec0942fa0`).join('\n');
+                await sshSession.createAdsTxtFile(domain, adsTxtContent);
+                log('info', 'ads.txt file created/updated successfully.');
+            }
+
+            // Finalize account info
+            if (sshResult) {
+                if (sshResult.cpanelUser) cpanelAccountInfo.user = sshResult.cpanelUser;
+                if (sshResult.adminUsername) cpanelAccountInfo.wpUser = sshResult.adminUsername;
+                if (sshResult.magicLink) cpanelAccountInfo.magicLink = sshResult.magicLink;
+            }
+            cpanelAccountInfo.wpPass = config.wpPassword;
+
+            success = true;
+            log('info', 'All operations completed successfully.');
+            break; // Exit loop on success
+
+        } catch (error) {
+            finalError = error;
+            log('warn', `Attempt ${attempt} failed: ${error.message}`);
+            if (attempt < maxRetries) {
+                log('info', `Retrying in ${retryDelay / 1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+            } else {
+                log('error', `All ${maxRetries} attempts failed. Marking as failed.`);
+            }
+        } finally {
+            await sshSession.dispose();
         }
-        
-        processStateManager.updateProgress(processId, newProgress);
     }
+
+    // This block runs once after all attempts are exhausted or after a success.
+    const currentProgress = processStateManager.getProcessStatus(processId).progress;
+    const newProgress = { ...currentProgress, current: currentProgress.current + 1 };
+
+    if (success) {
+        newProgress.successful++;
+        processState.results.success.push({
+            domain: domain,
+            adsenseId: adsenseIdNumbers,
+            cpanelUser: cpanelAccountInfo.user,
+            wpUser: cpanelAccountInfo.wpUser,
+            wpPass: cpanelAccountInfo.wpPass,
+            magicLink: cpanelAccountInfo.magicLink,
+        });
+    } else {
+        newProgress.failed++;
+        const errorMessage = finalError ? finalError.message : 'An unknown error occurred.';
+        processState.results.failed.push({
+            domain: domain,
+            adsenseId: adsenseIdNumbers,
+            error: errorMessage,
+        });
+    }
+    
+    processStateManager.updateProgress(processId, newProgress);
 }
 
 module.exports = {

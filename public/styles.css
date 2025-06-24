@@ -1148,6 +1148,7 @@ body {
     padding: var(--spacing-2xl);
     overflow-y: auto;
     box-shadow: var(--shadow-xs);
+    margin-top: 15px;
 }
 
 /* Individual Account Item */

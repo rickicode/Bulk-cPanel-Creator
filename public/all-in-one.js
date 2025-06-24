@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Operations
         masterCloneDomain: document.getElementById('master-clone-domain'),
         cloneMasterDomain: document.getElementById('clone-master-domain'),
+        forceRecreate: document.getElementById('force-recreate'),
         newWpPassword: document.getElementById('new-wp-password'),
         // Controls
         validateButton: document.getElementById('validate-button'),
@@ -140,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
             newWpPassword: elements.newWpPassword.value,
             domainList: elements.domainList.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
+            forceRecreate: elements.forceRecreate.checked,
         };
         StorageService.save('aio_operationDetails', opDetails);
     }
@@ -151,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.newWpPassword.value = opDetails.newWpPassword || '';
             elements.domainList.value = opDetails.domainList || '';
             elements.cloneMasterDomain.checked = opDetails.hasOwnProperty('cloneMasterDomain') ? opDetails.cloneMasterDomain : true;
+            elements.forceRecreate.checked = opDetails.forceRecreate || false;
         }
     }
     
@@ -183,6 +186,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     elements.cloneMasterDomain.addEventListener('change', saveOperationDetails);
+    
+    elements.forceRecreate.addEventListener('change', () => {
+        if (elements.forceRecreate.checked) {
+            elements.cloneMasterDomain.checked = true;
+        }
+        saveOperationDetails();
+    });
 
     elements.validateButton.addEventListener('click', async () => {
         elements.validationStatus.textContent = 'Validating...';
@@ -228,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             wpPassword: elements.newWpPassword.value,
             masterCloneDomain: elements.masterCloneDomain.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
+            forceRecreate: elements.forceRecreate.checked,
             domains: domains,
         };
 

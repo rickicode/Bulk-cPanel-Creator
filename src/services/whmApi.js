@@ -470,6 +470,41 @@ class WHMApi {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Terminate a cPanel account by its domain name.
+   */
+  async terminateAccountByDomain(domain) {
+    try {
+      logger.info('Attempting to terminate account by domain', { domain });
+      
+      // Find the user for the domain
+      const accountList = await this.listAccounts(domain);
+      if (!accountList.success || accountList.accounts.length === 0) {
+        logger.warn('No account found for domain, skipping termination.', { domain });
+        return { success: true, message: 'Account did not exist, no termination needed.' };
+      }
+      
+      const account = accountList.accounts.find(acc => acc.domain === domain);
+      if (!account) {
+        logger.warn('Domain search returned accounts, but none matched exactly. Skipping termination.', { domain });
+        return { success: true, message: 'No exact account match found, no termination needed.' };
+      }
+
+      const username = account.username;
+      logger.info(`Found user "${username}" for domain "${domain}". Proceeding with termination.`);
+      
+      // Terminate the account using the found username
+      return await this.deleteAccount(username);
+
+    } catch (error) {
+      logger.error('Failed to terminate account by domain:', {
+        domain,
+        error: error.message
+      });
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = WHMApi;
