@@ -48,6 +48,9 @@ async function startAllInOneProcess(processId, config, processStateManager) {
     const domainQueue = [...domains];
     let activePromises = 0;
 
+    // Add a flag to track if a rebuild is needed
+    processStateManager.updateProcessInfo(processId, { wasForceRecreated: false });
+
     // Instantiate APIs once for the entire process
     const whm = new WHMApi(config.whm);
     const cloudflare = new CloudflareApi(config.cloudflare);
@@ -56,6 +59,21 @@ async function startAllInOneProcess(processId, config, processStateManager) {
         if (domainQueue.length === 0 && activePromises === 0) {
             const finalState = processStateManager.getProcessStatus(processId);
             processStateManager.completeProcess(processId, finalState.results);
+
+            // After all domains are processed, check if a rebuild is needed
+            if (finalState.wasForceRecreated) {
+                processStateManager.addLog(processId, { level: 'info', message: '--- Starting final Nginx configuration rebuild ---' });
+                const sshSession = new SshSession(config.ssh);
+                try {
+                    await sshSession.connect();
+                    await sshSession.rebuildNginxConfig();
+                    processStateManager.addLog(processId, { level: 'info', message: 'Nginx configuration rebuild completed successfully.' });
+                } catch (e) {
+                    processStateManager.addLog(processId, { level: 'error', message: `Final Nginx rebuild failed: ${e.message}` });
+                } finally {
+                    await sshSession.dispose();
+                }
+            }
             return;
         }
 
@@ -130,6 +148,8 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
                         throw new Error(`Failed to terminate existing account for recreation: ${terminateResult.error}`);
                     }
                     log('info', 'Existing account terminated successfully. Proceeding with creation.');
+                    // Set the flag that a rebuild is needed
+                    processStateManager.updateProcessInfo(processId, { wasForceRecreated: true });
                 } else {
                     log('warn', 'cPanel account already exists. Skipping creation as Force Recreate is disabled.');
                     cpanelUser = '(existing user)';

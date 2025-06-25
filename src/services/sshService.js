@@ -145,7 +145,15 @@ class SshSession {
             }
         }
 
-        // --- Step 5: Install Plugin Set and Create Magic Link ---
+        // --- Step 5: Enable Search Engine Indexing ---
+        logger.info(`Enabling search engine indexing for ${domain}...`);
+        const indexingCmd = `wp option update blog_public 1 --allow-root --path=${docRoot}`;
+        const indexingResult = await this.ssh.execCommand(indexingCmd);
+        if (indexingResult.code !== 0) {
+            logger.warn(`(Non-fatal) Failed to enable indexing for ${domain}. STDERR: ${indexingResult.stderr || 'N/A'}`);
+        }
+
+        // --- Step 6: Install Plugin Set and Create Magic Link ---
         let magicLink = `https://${domain}/wp-admin/`; // Fallback
         try {
             logger.info(`Installing plugin set 3 for instance ${targetInstanceId} on domain ${domain}...`);
@@ -213,7 +221,15 @@ class SshSession {
             }
         }
 
-        // --- Step 5: Install Plugin Set and Create Magic Link ---
+        // --- Step 5: Enable Search Engine Indexing ---
+        logger.info(`Enabling search engine indexing for ${domain}...`);
+        const indexingCmd = `wp option update blog_public 1 --allow-root --path=${docRoot}`;
+        const indexingResult = await this.ssh.execCommand(indexingCmd);
+        if (indexingResult.code !== 0) {
+            logger.warn(`(Non-fatal) Failed to enable indexing for ${domain}. STDERR: ${indexingResult.stderr || 'N/A'}`);
+        }
+
+        // --- Step 6: Install Plugin Set and Create Magic Link ---
         let magicLink = `https://${domain}/wp-admin/`; // Fallback
         try {
             if (targetInstanceId) {
@@ -257,6 +273,21 @@ class SshSession {
             await this.ssh.putFile(tempFilePath, adsTxtPath);
         } finally {
             fs.unlinkSync(tempFilePath);
+        }
+    }
+
+    /**
+     * Rebuilds the Nginx configuration.
+     */
+    async rebuildNginxConfig() {
+        logger.info('Rebuilding Nginx configuration...');
+        const command = '/usr/local/cpanel/scripts/ea-nginx config --all';
+        const result = await this.ssh.execCommand(command);
+        if (result.code !== 0) {
+            // This is often a non-fatal error, so we just log it.
+            logger.warn(`(Non-fatal) Nginx rebuild command finished with non-zero exit code. STDOUT: ${result.stdout || 'N/A'}. STDERR: ${result.stderr || 'N/A'}`);
+        } else {
+            logger.info('Nginx configuration rebuilt successfully.');
         }
     }
 }

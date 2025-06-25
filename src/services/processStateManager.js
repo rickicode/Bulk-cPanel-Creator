@@ -50,6 +50,19 @@ class ProcessStateManager {
   }
 
   /**
+   * Updates the top-level information of a running process.
+   * @param {string} processId - The ID of the process to update.
+   * @param {object} newInfo - An object with properties to add or update.
+   */
+  updateProcessInfo(processId, newInfo) {
+    const process = this.activeProcesses.get(processId);
+    if (process) {
+      Object.assign(process, newInfo);
+      logger.debug('Process info updated:', { processId, newInfo });
+    }
+  }
+
+  /**
    * Add log to process
    */
   addLog(processId, logData) {
