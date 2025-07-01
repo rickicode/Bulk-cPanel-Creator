@@ -143,13 +143,33 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
             if (checkResult.exists) {
                 if (config.forceRecreate) {
                     log('warn', 'cPanel account already exists. Force Recreate is enabled. Terminating account...');
-                    const terminateResult = await whm.terminateAccountByDomain(domain);
+                    const accountInfo = await whm.getAccountInfoByDomain(domain);
+
+                    if (!accountInfo.success || !accountInfo.account) {
+                        throw new Error(`Could not find user for domain ${domain} to terminate.`);
+                    }
+                    
+                    const username = accountInfo.account.username;
+                    const preTerminationSsh = new SshSession(config.ssh);
+                    try {
+                        log('info', `Found user ${username}. Running pre-termination steps.`);
+                        await preTerminationSsh.connect();
+                        await preTerminationSsh.removeNginxConfig(username);
+                    } finally {
+                        await preTerminationSsh.dispose();
+                    }
+
+                    log('info', 'Waiting 3 seconds before WHM termination to allow server processes to close...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+
+                    const terminateResult = await whm.deleteAccount(username);
                     if (!terminateResult.success) {
                         throw new Error(`Failed to terminate existing account for recreation: ${terminateResult.error}`);
                     }
+                    
                     log('info', 'Existing account terminated successfully. Proceeding with creation.');
-                    // Set the flag that a rebuild is needed
                     processStateManager.updateProcessInfo(processId, { wasForceRecreated: true });
+
                 } else {
                     log('warn', 'cPanel account already exists. Skipping creation as Force Recreate is disabled.');
                     cpanelUser = '(existing user)';

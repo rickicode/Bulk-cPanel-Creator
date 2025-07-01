@@ -177,71 +177,126 @@ router.get('/results/:processId', (req, res) => {
 // Main processing function
 async function processBulkDeletion(processId, whmConfig, domains, cloudflareConfig, processStateManager) {
     const processState = activeProcesses.get(processId);
-    
+    const MAX_CONCURRENT_ACCOUNTS = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS, 10) || 10;
+    let activePromises = 0;
+    let domainQueue = [...domains];
+
     try {
         processState.status = 'processing';
-        addLog(processState, 'Starting bulk account deletion process...', 'info');
-        
+        addLog(processState, 'Starting bulk account deletion process with concurrency...', 'info');
+
         // Initialize Cloudflare API if credentials provided
         let cloudflareApi = null;
         if (cloudflareConfig) {
             cloudflareApi = new CloudflareApi(cloudflareConfig);
             addLog(processState, '🔗 Cloudflare DNS cleanup enabled', 'info');
         }
-        
-        // Process each domain
-        for (let i = 0; i < domains.length; i++) {
+
+        const processNext = async () => {
             if (processState.status === 'stopped') {
                 addLog(processState, 'Process stopped by user', 'warning');
-                break;
+                return;
             }
-            
-            const domain = domains[i];
-            processState.currentDomain = domain;
-            
-            addLog(processState, `Processing domain: ${domain}`, 'info');
-            
-            try {
-                const result = await deleteAccountByDomain(whmConfig, domain, cloudflareApi, processState);
-                processState.results.push(result);
-                
-                if (result.success) {
-                    processState.successful++;
-                    addLog(processState, `✓ Successfully deleted account for: ${domain}`, 'success');
-                } else {
-                    processState.failed++;
-                    addLog(processState, `✗ Failed to delete account for: ${domain} - ${result.error}`, 'error');
-                }
-                
-            } catch (error) {
-                processState.failed++;
-                const errorMsg = `Error deleting account for ${domain}: ${error.message}`;
-                addLog(processState, errorMsg, 'error');
-                
-                processState.results.push({
-                    domain: domain,
-                    success: false,
-                    error: error.message
-                });
+            while (domainQueue.length > 0 && activePromises < MAX_CONCURRENT_ACCOUNTS) {
+                const domain = domainQueue.shift();
+                activePromises++;
+                processState.currentDomain = domain;
+                addLog(processState, `Processing domain: ${domain}`, 'info');
+
+                (async () => {
+                    try {
+                        // Use getAccountInfoByDomain for robust lookup
+                        const whmApiInstance = new WHMApi(whmConfig);
+                        const accountInfoResult = await whmApiInstance.getAccountInfoByDomain(domain);
+
+                        if (!accountInfoResult.success) {
+                            processState.failed++;
+                            addLog(processState, `✗ Failed to lookup account for: ${domain} - ${accountInfoResult.error}`, 'error');
+                            processState.results.push({
+                                domain: domain,
+                                success: false,
+                                error: accountInfoResult.error
+                            });
+                        } else if (!accountInfoResult.account) {
+                            processState.skipped++;
+                            addLog(processState, `⏭️ No cPanel account found for domain: ${domain} (skipped)`, 'warning');
+                            processState.results.push({
+                                domain: domain,
+                                success: false,
+                                skipped: true,
+                                error: 'No cPanel account found for domain (skipped)'
+                            });
+                        } else {
+                            // Delete the account
+                            const deleteResult = await whmApiInstance.deleteAccount(accountInfoResult.account.username);
+                            if (deleteResult.success) {
+                                processState.successful++;
+                                addLog(processState, `✓ Successfully deleted account for: ${domain}`, 'success');
+                                // Attempt DNS cleanup if Cloudflare is configured
+                                let dnsCleanupResult = null;
+                                if (cloudflareApi) {
+                                    dnsCleanupResult = await deleteDnsRecords(cloudflareApi, domain, processState);
+                                }
+                                const result = {
+                                    domain: domain,
+                                    username: accountInfoResult.account.username,
+                                    email: accountInfoResult.account.email,
+                                    success: true,
+                                    deletionTime: new Date().toISOString()
+                                };
+                                if (dnsCleanupResult) {
+                                    result.dnsCleanup = {
+                                        success: dnsCleanupResult.success,
+                                        recordsDeleted: dnsCleanupResult.recordsDeleted || 0,
+                                        errors: dnsCleanupResult.errors || null
+                                    };
+                                    if (dnsCleanupResult.success && dnsCleanupResult.recordsDeleted > 0) {
+                                        addLog(processState, `🧹 DNS cleanup completed for ${domain}: ${dnsCleanupResult.recordsDeleted} record(s) removed`, 'success');
+                                    }
+                                }
+                                processState.results.push(result);
+                            } else {
+                                processState.failed++;
+                                addLog(processState, `✗ Failed to delete account for: ${domain} - ${deleteResult.error}`, 'error');
+                                processState.results.push({
+                                    domain: domain,
+                                    success: false,
+                                    error: deleteResult.error
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        processState.failed++;
+                        const errorMsg = `Error deleting account for ${domain}: ${error.message}`;
+                        addLog(processState, errorMsg, 'error');
+                        processState.results.push({
+                            domain: domain,
+                            success: false,
+                            error: error.message
+                        });
+                    } finally {
+                        processState.processed++;
+                        activePromises--;
+                        processNext();
+                    }
+                })();
             }
-            
-            processState.processed++;
-            
-            // Small delay to prevent overwhelming the server
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-        processState.status = 'completed';
-        processState.completed = true;
-        processState.currentDomain = null;
-        
-        addLog(processState, `Process completed: ${processState.successful} deleted, ${processState.failed} failed`, 'info');
-        
+
+            // If all domains processed and no active promises, mark as completed
+            if (domainQueue.length === 0 && activePromises === 0) {
+                processState.status = 'completed';
+                processState.completed = true;
+                processState.currentDomain = null;
+                addLog(processState, `Process completed: ${processState.successful} deleted, ${processState.failed} failed, ${processState.skipped} skipped`, 'info');
+            }
+        };
+
+        processNext();
+
     } catch (error) {
         processState.status = 'error';
         processState.error = error.message;
         processState.completed = true;
-        
         addLog(processState, `Fatal error: ${error.message}`, 'error');
         logger.error('Bulk deletion process error:', error);
     } finally {

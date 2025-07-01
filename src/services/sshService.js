@@ -277,6 +277,22 @@ class SshSession {
     }
 
     /**
+     * Removes the Nginx configuration for a specific user.
+     * @param {string} username - The cPanel username.
+     */
+    async removeNginxConfig(username) {
+        logger.info(`Removing Nginx configuration for user ${username}...`);
+        const command = `/usr/local/cpanel/scripts/ea-nginx remove ${username}`;
+        const result = await this.ssh.execCommand(command);
+        if (result.code !== 0) {
+            // Log as a warning as this might not be a critical failure
+            logger.warn(`(Non-fatal) Failed to remove Nginx config for ${username}. STDOUT: ${result.stdout || 'N/A'}. STDERR: ${result.stderr || 'N/A'}`);
+        } else {
+            logger.info(`Nginx configuration for ${username} removed successfully.`);
+        }
+    }
+
+    /**
      * Rebuilds the Nginx configuration.
      */
     async rebuildNginxConfig() {

@@ -135,12 +135,9 @@ class CpanelBulkDelete {
         this.elements.deleteCfAccountBtn.addEventListener('click', () => this.deleteSelectedCloudflareAccount());
         
         // Cloudflare form changes (optional)
-        [this.elements.cfEmail, this.elements.cfApiKey, this.elements.cfRecordValue].forEach(element => {
+        [this.elements.cfEmail, this.elements.cfApiKey].forEach(element => {
             element.addEventListener('input', () => this.validateCloudflareFields());
         });
-        
-        // Cloudflare record type change
-        this.elements.cfRecordType.addEventListener('change', () => this.toggleCloudflareRecordType());
         
         // Cloudflare test connection
         this.elements.testCfConnectionBtn.addEventListener('click', () => this.testCloudflareConnection());
@@ -201,11 +198,8 @@ class CpanelBulkDelete {
                 
                 this.elements.cfEmail.value = cfData.email || '';
                 this.elements.cfApiKey.value = cfData.apiKey || '';
-                this.elements.cfRecordType.value = cfData.recordType || 'A';
-                this.elements.cfRecordValue.value = cfData.recordValue || '';
                 
                 this.validateCloudflareFields();
-                this.toggleCloudflareRecordType();
             }
         } catch (error) {
             console.error('Error loading saved Cloudflare data:', error);
@@ -885,9 +879,7 @@ class CpanelBulkDelete {
     validateCloudflareFields() {
         const email = this.elements.cfEmail.value.trim();
         const apiKey = this.elements.cfApiKey.value.trim();
-        const recordValue = this.elements.cfRecordValue.value.trim();
-
-        const isValid = email && apiKey && recordValue;
+        const isValid = email && apiKey;
         this.elements.testCfConnectionBtn.disabled = !isValid;
         
         // Save Cloudflare connection data whenever valid data is entered
@@ -918,9 +910,7 @@ class CpanelBulkDelete {
         try {
             const cloudflareData = {
                 email: this.elements.cfEmail.value.trim(),
-                apiKey: this.elements.cfApiKey.value.trim(),
-                recordType: this.elements.cfRecordType.value,
-                recordValue: this.elements.cfRecordValue.value.trim()
+                apiKey: this.elements.cfApiKey.value.trim()
             };
             
             const encodedData = btoa(JSON.stringify(cloudflareData));
@@ -973,7 +963,7 @@ class CpanelBulkDelete {
         accounts.forEach((account, index) => {
             const option = document.createElement('option');
             option.value = index;
-            option.textContent = `${account.email} (${account.recordType}: ${account.recordValue})`;
+            option.textContent = `${account.email}`;
             select.appendChild(option);
         });
         
@@ -997,13 +987,9 @@ class CpanelBulkDelete {
         if (account) {
             this.elements.cfEmail.value = account.email;
             this.elements.cfApiKey.value = account.apiKey;
-            this.elements.cfRecordType.value = account.recordType;
-            this.elements.cfRecordValue.value = account.recordValue;
             
             // Trigger validation
             this.validateCloudflareFields();
-            this.toggleCloudflareRecordType();
-            
             this.showToast('success', `Loaded account: ${account.email}`);
         }
         
@@ -1016,8 +1002,6 @@ class CpanelBulkDelete {
     saveCurrentCloudflareAccount(showMessage = true) {
         const email = this.elements.cfEmail.value.trim();
         const apiKey = this.elements.cfApiKey.value.trim();
-        const recordType = this.elements.cfRecordType.value;
-        const recordValue = this.elements.cfRecordValue.value.trim();
         
         if (!email || !apiKey) {
             if (showMessage) {
@@ -1029,8 +1013,6 @@ class CpanelBulkDelete {
         const newAccount = {
             email,
             apiKey,
-            recordType,
-            recordValue,
             savedAt: new Date().toISOString()
         };
         

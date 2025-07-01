@@ -361,8 +361,8 @@ class WHMApi {
     try {
       const params = searchTerm ? { search: searchTerm, searchtype: 'domain' } : {};
       const response = await this.client.get('/json-api/listaccts', { params });
-      
-      if (response.data && response.data.acct) {
+
+      if (response.data && Array.isArray(response.data.acct)) {
         const accounts = response.data.acct.map(account => ({
           domain: account.domain,
           username: account.user,
@@ -371,10 +371,11 @@ class WHMApi {
           suspended: account.suspended === '1',
           created: account.startdate
         }));
-        
         return { success: true, accounts };
       } else {
-        throw new Error('Invalid accounts list response');
+        logger.warn('WHM API returned unexpected accounts list structure', { data: response.data });
+        // Treat as no accounts found instead of error
+        return { success: true, accounts: [] };
       }
     } catch (error) {
       logger.error('Failed to list accounts:', error.message);
@@ -499,6 +500,40 @@ class WHMApi {
 
     } catch (error) {
       logger.error('Failed to terminate account by domain:', {
+        domain,
+        error: error.message
+      });
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get account information by domain name.
+   */
+  async getAccountInfoByDomain(domain) {
+    try {
+      const accountList = await this.listAccounts(domain);
+      if (!accountList.success) {
+        // If the error is about invalid accounts list, treat as no account found
+        if (
+          accountList.error &&
+          accountList.error.toLowerCase().includes('invalid accounts list')
+        ) {
+          logger.warn('WHM API returned invalid accounts list, treating as no account found', { domain });
+          return { success: true, account: null };
+        }
+        throw new Error(accountList.error);
+      }
+      if (!Array.isArray(accountList.accounts) || accountList.accounts.length === 0) {
+        return { success: true, account: null }; // No account found
+      }
+      const account = accountList.accounts.find(acc => acc.domain === domain);
+      if (!account) {
+        return { success: true, account: null }; // No exact match
+      }
+      return { success: true, account };
+    } catch (error) {
+      logger.error('Failed to get account info by domain:', {
         domain,
         error: error.message
       });
