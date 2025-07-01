@@ -74,6 +74,23 @@ async function startAllInOneProcess(processId, config, processStateManager) {
                     await sshSession.dispose();
                 }
             }
+
+            // Always execute /scripts/updateuserdomains after all bulk is done
+            processStateManager.addLog(processId, { level: 'info', message: '--- Running /scripts/updateuserdomains ---' });
+            const sshSessionUpdate = new SshSession(config.ssh);
+            try {
+                await sshSessionUpdate.connect();
+                const updateResult = await sshSessionUpdate.ssh.execCommand('/scripts/updateuserdomains');
+                if (updateResult.code === 0) {
+                    processStateManager.addLog(processId, { level: 'info', message: '/scripts/updateuserdomains executed successfully.' });
+                } else {
+                    processStateManager.addLog(processId, { level: 'error', message: `/scripts/updateuserdomains failed. STDOUT: ${updateResult.stdout || 'N/A'}, STDERR: ${updateResult.stderr || 'N/A'}` });
+                }
+            } catch (e) {
+                processStateManager.addLog(processId, { level: 'error', message: `Error running /scripts/updateuserdomains: ${e.message}` });
+            } finally {
+                await sshSessionUpdate.dispose();
+            }
             return;
         }
 
