@@ -34,6 +34,7 @@ class ProcessStateManager {
       }
     };
 
+    processData.lastPolledAt = new Date(); // Track last poll time
     this.activeProcesses.set(processId, processData);
     this.processLogs.set(processId, []);
     this.processProgress.set(processId, processData.progress);
@@ -195,6 +196,16 @@ class ProcessStateManager {
   }
 
   /**
+   * Update last polled time for a process
+   */
+  updateLastPolled(processId) {
+    const process = this.activeProcesses.get(processId);
+    if (process) {
+      process.lastPolledAt = new Date();
+    }
+  }
+
+  /**
    * Get process status
    */
   getProcessStatus(processId) {
@@ -208,6 +219,7 @@ class ProcessStateManager {
       status: process.status,
       startedAt: process.startedAt,
       lastUpdated: process.lastUpdated || process.startedAt,
+      lastPolledAt: process.lastPolledAt,
       progress: this.processProgress.get(processId) || process.progress,
       completedAt: process.completedAt,
       failedAt: process.failedAt,

@@ -46,6 +46,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Initialize Process State Manager
 const processStateManager = new ProcessStateManager();
 
+// --- Periodic polling timeout checker ---
+const PROCESS_POLL_TIMEOUT_MS = 30 * 1000; // 30 seconds
+setInterval(() => {
+  const now = Date.now();
+  const active = processStateManager.getActiveProcesses();
+  active.forEach(proc => {
+    if (
+      proc.status === 'running' &&
+      proc.lastPolledAt &&
+      now - new Date(proc.lastPolledAt).getTime() > PROCESS_POLL_TIMEOUT_MS
+    ) {
+      processStateManager.failProcess(proc.processId, {
+        message: 'Process stopped: frontend polling timeout (disconnected or refreshed)',
+        code: 'POLL_TIMEOUT'
+      });
+    }
+  });
+}, 10000); // Check every 10 seconds
+
 // Make processStateManager available to routes
 app.use((req, res, next) => {
   req.processStateManager = processStateManager;

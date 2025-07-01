@@ -19,6 +19,9 @@ router.get('/:processId/status', (req, res) => {
       });
     }
 
+    // Update last polled time for this process
+    req.processStateManager.updateLastPolled(processId);
+
     const status = req.processStateManager.getProcessStatus(processId);
     
     if (!status) {

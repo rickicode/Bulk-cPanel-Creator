@@ -427,16 +427,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function downloadResults(container, fileName) {
         let textContent = '';
-        container.querySelectorAll('.account-card').forEach(card => {
-            const domain = card.querySelector('.account-domain').textContent;
-            textContent += `Domain: ${domain}\n`;
-            card.querySelectorAll('.detail-row').forEach(row => {
-                const label = row.querySelector('.detail-label').textContent;
-                const value = row.querySelector('.selectable, .detail-value, .login-link')?.textContent.trim();
-                textContent += `${label} ${value}\n`;
+        // Try .account-card (success) first
+        const accountCards = container.querySelectorAll('.account-card');
+        if (accountCards.length > 0) {
+            accountCards.forEach(card => {
+                const domain = card.querySelector('.account-domain').textContent;
+                textContent += `Domain: ${domain}\n`;
+                card.querySelectorAll('.detail-row').forEach(row => {
+                    const label = row.querySelector('.detail-label').textContent;
+                    const value = row.querySelector('.selectable, .detail-value, .login-link')?.textContent.trim();
+                    textContent += `${label} ${value}\n`;
+                });
+                textContent += '-----------------------------------\n';
             });
-            textContent += '-----------------------------------\n';
-        });
+        } else {
+            // Handle .compact-result-card (failed)
+            const compactCards = container.querySelectorAll('.compact-result-card');
+            compactCards.forEach(card => {
+                const domain = card.querySelector('.compact-result-info strong')?.textContent || '';
+                const error = card.querySelector('.text-red strong')?.textContent || '';
+                textContent += `Domain: ${domain}\n`;
+                if (error) textContent += `Error: ${error}\n`;
+                textContent += '-----------------------------------\n';
+            });
+        }
         if (!textContent) return alert('No results to export.');
         
         const blob = new Blob([textContent], { type: 'text/plain' });
