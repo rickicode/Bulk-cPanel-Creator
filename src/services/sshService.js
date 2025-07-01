@@ -85,16 +85,31 @@ class SshSession {
     async runAllInOneSshTasks(domain, newPassword, adsenseIdNumbers, masterCloneDomain) {
         let adminUsername = null;
 
-        // --- Step 0: Get Source Instance ID for cloning ---
-        const instanceIdCmd = `wp-toolkit --list -domain-name ${masterCloneDomain} -format json`;
-        const instanceIdResult = await this.ssh.execCommand(instanceIdCmd);
-        if (instanceIdResult.code !== 0 || !instanceIdResult.stdout) {
-            throw new Error(`Failed to get instance ID for master domain. STDERR: ${instanceIdResult.stderr || 'N/A'}`);
+        // --- Step 0: Get Source Instance ID for cloning (with retry) ---
+        const maxInstanceIdRetries = 3;
+        const instanceIdRetryDelay = 2000;
+        let sourceInstanceId = null;
+        let lastInstanceIdError = null;
+        for (let attempt = 1; attempt <= maxInstanceIdRetries; attempt++) {
+            const instanceIdCmd = `wp-toolkit --list -domain-name ${masterCloneDomain} -format json`;
+            const instanceIdResult = await this.ssh.execCommand(instanceIdCmd);
+            if (instanceIdResult.code === 0 && instanceIdResult.stdout) {
+                try {
+                    const instances = JSON.parse(instanceIdResult.stdout.trim());
+                    sourceInstanceId = instances?.[0]?.id;
+                    if (sourceInstanceId) break;
+                } catch (e) {
+                    lastInstanceIdError = `JSON parse error: ${e.message}`;
+                }
+            } else {
+                lastInstanceIdError = `Failed to get instance ID for master domain. STDERR: ${instanceIdResult.stderr || 'N/A'}`;
+            }
+            if (attempt < maxInstanceIdRetries) {
+                await new Promise(resolve => setTimeout(resolve, instanceIdRetryDelay));
+            }
         }
-        const instances = JSON.parse(instanceIdResult.stdout.trim());
-        const sourceInstanceId = instances?.[0]?.id;
         if (!sourceInstanceId) {
-            throw new Error('Instance ID not found in wp-toolkit response for master domain.');
+            throw new Error(`Failed to get instance ID for master domain after ${maxInstanceIdRetries} attempts. Last error: ${lastInstanceIdError || 'Unknown error.'}`);
         }
 
         // --- Step 1: Clone WordPress site ---
