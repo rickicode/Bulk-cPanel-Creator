@@ -20,7 +20,7 @@ class WHMApi {
       },
       // Allow self-signed certificates for development
       httpsAgent: new https.Agent({
-        rejectUnauthorized: process.env.NODE_ENV === 'production',
+        rejectUnauthorized: false,
         checkServerIdentity: (hostname, cert) => {
           const error = tls.checkServerIdentity(hostname, cert);
           if (error) {
