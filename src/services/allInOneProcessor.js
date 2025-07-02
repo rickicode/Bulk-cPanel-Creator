@@ -14,26 +14,14 @@ const CONCURRENCY_LIMIT = parseInt(process.env.MAX_CONCURRENT_ACCOUNTS, 10) || 1
 async function validateAllCredentials(whmConfig, cloudflareConfig, sshConfig) {
     try {
         const whm = new WHMApi(whmConfig);
-        const cloudflare = new CloudflareApi(cloudflareConfig);
-
-        const [whmResult, cfResult, sshResult] = await Promise.allSettled([
-            whm.testConnection(),
-            cloudflare.testConnection(),
-            validateSsh(sshConfig),
-        ]);
-
-        if (whmResult.status === 'rejected' || (whmResult.value && !whmResult.value.success)) {
-            throw new Error(`WHM validation failed: ${whmResult.reason?.message || whmResult.value?.error}`);
+        const promises = [whm.testConnection(), validateSsh(sshConfig)];
+        if (cloudflareConfig && cloudflareConfig.email && cloudflareConfig.apiKey) {
+            const cloudflare = new CloudflareApi(cloudflareConfig);
+            promises.push(cloudflare.testConnection());
         }
-        if (cfResult.status === 'rejected' || (cfResult.value && !cfResult.value.success)) {
-            throw new Error(`Cloudflare validation failed: ${cfResult.reason?.message || cfResult.value?.error}`);
-        }
-        if (sshResult.status === 'rejected') {
-            throw new Error(`SSH validation failed: ${sshResult.reason?.message}`);
-        }
-
+        await Promise.all(promises);
     } catch (error) {
-        throw new Error(`Credential validation failed: ${error.message}`);
+        throw new Error('Credential validation failed: ' + error.message);
     }
 }
 
