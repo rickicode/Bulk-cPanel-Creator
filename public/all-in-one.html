@@ -59,21 +59,27 @@
                             <div class="form-field"><label for="whm-password">Password</label><input type="text" id="whm-password" placeholder="Enter server password" required></div>
                         </div>
                     </div>
-                    <div class="config-group">
-                        <h3 class="group-title">Cloudflare Credentials</h3>
-                        <div class="form-field full-width">
-                            <label for="cloudflare-account-select">Saved Cloudflare Accounts</label>
-                            <div class="select-with-action">
-                                <select id="cloudflare-account-select"><option value="">Select saved account or enter new</option></select>
-                                <button type="button" id="delete-cloudflare-account-btn" class="btn btn-outline btn-sm" title="Delete selected account">🗑️</button>
-                            </div>
-                            <small class="help-text">💡 Accounts are automatically saved when connection test is successful</small>
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-field"><label for="cloudflare-email">Cloudflare Email</label><input type="email" id="cloudflare-email" placeholder="e.g., user@example.com" required></div>
-                            <div class="form-field"><label for="cloudflare-api-key">Cloudflare Global API Key</label><input type="text" id="cloudflare-api-key" placeholder="Enter your Global API Key" required></div>
-                        </div>
-                    </div>
+<div class="config-group">
+    <h3 class="group-title">Cloudflare Credentials</h3>
+    <div class="form-field" style="margin-bottom: 10px;">
+        <label class="checkbox-label">
+            <input type="checkbox" id="enable-cloudflare" checked>
+            Enable Cloudflare Integration
+        </label>
+    </div>
+    <div class="form-field full-width">
+        <label for="cloudflare-account-select">Saved Cloudflare Accounts</label>
+        <div class="select-with-action">
+            <select id="cloudflare-account-select"><option value="">Select saved account or enter new</option></select>
+            <button type="button" id="delete-cloudflare-account-btn" class="btn btn-outline btn-sm" title="Delete selected account">🗑️</button>
+        </div>
+        <small class="help-text">💡 Accounts are automatically saved when connection test is successful</small>
+    </div>
+    <div class="form-grid">
+        <div class="form-field"><label for="cloudflare-email">Cloudflare Email</label><input type="email" id="cloudflare-email" placeholder="e.g., user@example.com" required></div>
+        <div class="form-field"><label for="cloudflare-api-key">Cloudflare Global API Key</label><input type="text" id="cloudflare-api-key" placeholder="Enter your Global API Key" required></div>
+    </div>
+</div>
                     <div class="config-group">
                         <h3 class="group-title">Operation Details</h3>
                         <div class="form-grid">

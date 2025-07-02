@@ -26,7 +26,7 @@ router.post('/start', (req, res) => {
     const { whm, cloudflare, wpPassword, masterCloneDomain, domains, cloneMasterDomain, forceRecreate } = req.body;
 
     // Basic validation
-    if (!whm || !cloudflare || !wpPassword || !masterCloneDomain || !Array.isArray(domains) || domains.length === 0) {
+    if (!whm || !wpPassword || !masterCloneDomain || !Array.isArray(domains) || domains.length === 0) {
         return res.status(400).json({ message: 'Missing required configuration parameters.' });
     }
 

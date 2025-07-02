@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
         whmUser: document.getElementById('whm-user'),
         whmPassword: document.getElementById('whm-password'),
         // Cloudflare
+        enableCloudflare: document.getElementById('enable-cloudflare'),
         cloudflareEmail: document.getElementById('cloudflare-email'),
         cloudflareApiKey: document.getElementById('cloudflare-api-key'),
         cloudflareAccountSelect: document.getElementById('cloudflare-account-select'),
@@ -63,6 +64,20 @@ document.addEventListener('DOMContentLoaded', () => {
             this.save(key, accounts);
         }
     };
+
+    // --- Cloudflare Enable/Disable Logic ---
+    function updateCloudflareFieldsState() {
+        const enabled = elements.enableCloudflare.checked;
+        elements.cloudflareEmail.required = enabled;
+        elements.cloudflareApiKey.required = enabled;
+        elements.cloudflareEmail.disabled = !enabled;
+        elements.cloudflareApiKey.disabled = !enabled;
+        elements.cloudflareAccountSelect.disabled = !enabled;
+        elements.deleteCloudflareAccountBtn.disabled = !enabled;
+    }
+    elements.enableCloudflare.addEventListener('change', updateCloudflareFieldsState);
+    // Initial state
+    updateCloudflareFieldsState();
 
     // --- Account Setup Functions ---
     function setupCloudflareDropdown() {
@@ -199,7 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.validationStatus.className = 'status-message neutral';
         elements.startProcessButton.disabled = true;
         const whmCreds = { host: elements.whmHost.value, username: elements.whmUser.value, password: elements.whmPassword.value };
-        const cloudflareCreds = { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value };
+        let cloudflareCreds = null;
+        if (elements.enableCloudflare.checked) {
+            cloudflareCreds = { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value };
+        }
         try {
             const response = await fetch('/api/all-in-one/validate', {
                 method: 'POST',
@@ -212,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 elements.validationStatus.className = 'status-message success';
                 elements.startProcessButton.disabled = false;
                 saveWhmCredentials();
-                saveCloudflareCredentials();
+                if (elements.enableCloudflare.checked) saveCloudflareCredentials();
             } else {
                 throw new Error(result.message || 'Validation failed.');
             }
@@ -234,13 +252,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const config = {
             whm: { host: elements.whmHost.value, username: elements.whmUser.value, password: elements.whmPassword.value },
-            cloudflare: { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value },
             wpPassword: elements.newWpPassword.value,
             masterCloneDomain: elements.masterCloneDomain.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
             forceRecreate: elements.forceRecreate.checked,
             domains: domains,
         };
+        if (elements.enableCloudflare.checked) {
+            config.cloudflare = { email: elements.cloudflareEmail.value, apiKey: elements.cloudflareApiKey.value };
+        }
 
         try {
             const response = await fetch('/api/all-in-one/start', {
