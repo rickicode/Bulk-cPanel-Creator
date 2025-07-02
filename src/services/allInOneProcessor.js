@@ -41,9 +41,30 @@ async function startAllInOneProcess(processId, config, processStateManager) {
 
     // Instantiate APIs once for the entire process
     const whm = new WHMApi(config.whm);
-    const cloudflare = new CloudflareApi(config.cloudflare);
+    let cloudflare = null;
+    if (config.cloudflare && config.cloudflare.email && config.cloudflare.apiKey) {
+        cloudflare = new CloudflareApi(config.cloudflare);
+    }
+
+    // Cek instance ID master clone jika cloneMasterDomain aktif
+    if (config.cloneMasterDomain) {
+        // Misal: instance ID = config.masterCloneDomain
+        const masterInstanceId = config.masterCloneDomain;
+        if (!masterInstanceId || typeof masterInstanceId !== 'string' || !masterInstanceId.trim()) {
+            processStateManager.addLog(processId, { level: 'error', message: 'Master clone instance ID tidak ditemukan. Proses dibatalkan.' });
+            processStateManager.failProcess(processId, { message: 'Master clone instance ID tidak ditemukan.', code: 'NO_MASTER_INSTANCE' });
+            return;
+        }
+    }
 
     const processNext = async () => {
+        // Stop if process is marked as stopped
+        const status = processStateManager.getProcessStatus(processId);
+        if (status && status.status === 'stopped') {
+            processStateManager.addLog(processId, { level: 'warn', message: 'Process stopped. No further domains will be processed.' });
+            return;
+        }
+
         if (domainQueue.length === 0 && activePromises === 0) {
             const finalState = processStateManager.getProcessStatus(processId);
             processStateManager.completeProcess(processId, finalState.results);
@@ -83,6 +104,12 @@ async function startAllInOneProcess(processId, config, processStateManager) {
         }
 
         while (domainQueue.length > 0 && activePromises < CONCURRENCY_LIMIT) {
+            // Stop if process is marked as stopped before processing next domain
+            const status = processStateManager.getProcessStatus(processId);
+            if (status && status.status === 'stopped') {
+                processStateManager.addLog(processId, { level: 'warn', message: 'Process stopped. No further domains will be processed.' });
+                return;
+            }
             activePromises++;
             const domainEntry = domainQueue.shift();
             
@@ -125,6 +152,13 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         const sshSession = new SshSession(config.ssh);
         try {
+            // Force stop: cek status sebelum dan sesudah setiap langkah penting
+            const status = processStateManager.getProcessStatus(processId);
+            if (status && status.status === 'stopped') {
+                await sshSession.dispose();
+                throw new Error('Process force-stopped by user');
+            }
+
             if (attempt > 1) {
                 log('info', `--- Starting attempt ${attempt} of ${maxRetries} ---`);
             } else {
@@ -132,17 +166,32 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
             }
 
             // Step 1: Add DNS record to Cloudflare
-            log('info', 'Stage: Configuring DNS...');
-            cloudflare.recordValue = config.whm.host;
-            const dnsResult = await cloudflare.addOrUpdateDnsRecord(domain);
-            if (!dnsResult.success) throw new Error(`Cloudflare DNS failed: ${dnsResult.error}`);
+            if (status && status.status === 'stopped') {
+                await sshSession.dispose();
+                throw new Error('Process force-stopped by user');
+            }
+            if (cloudflare) {
+                log('info', 'Stage: Configuring DNS...');
+                cloudflare.recordValue = config.whm.host;
+                const dnsResult = await cloudflare.addOrUpdateDnsRecord(domain);
+                if (!dnsResult.success) throw new Error(`Cloudflare DNS failed: ${dnsResult.error}`);
+            } else {
+                log('info', 'Stage: Skipping Cloudflare DNS (Cloudflare disabled)');
+            }
 
             // Step 2: Check for and/or Create cPanel Account
+            if (status && status.status === 'stopped') {
+                await sshSession.dispose();
+                throw new Error('Process force-stopped by user');
+            }
             let cpanelUser;
             let cpanelPass = '********';
             log('info', 'Stage: Preparing cPanel Account...');
             
+            // --- Cek keberadaan akun cPanel ---
             let shouldCreate = true;
+            cpanelUser = undefined;
+            cpanelPass = '********';
             const checkResult = await whm.checkDomainExists(domain);
 
             if (checkResult.exists) {
@@ -174,15 +223,22 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
                     
                     log('info', 'Existing account terminated successfully. Proceeding with creation.');
                     processStateManager.updateProcessInfo(processId, { wasForceRecreated: true });
-
+                    shouldCreate = true;
                 } else {
-                    log('warn', 'cPanel account already exists. Skipping creation as Force Recreate is disabled.');
-                    cpanelUser = '(existing user)';
+                    log('warn', 'cPanel account already exists. Skipping creation and proceeding to clone (no Force Recreate).');
+                    // Ambil username cPanel yang sudah ada
+                    const accountInfo = await whm.getAccountInfoByDomain(domain);
+                    cpanelUser = accountInfo && accountInfo.success && accountInfo.account ? accountInfo.account.username : '(existing user)';
                     shouldCreate = false;
                 }
             }
 
-            if (shouldCreate) {
+            // --- Buat akun cPanel jika perlu ---
+            if (shouldCreate && !checkResult.exists) {
+                if (status && status.status === 'stopped') {
+                    await sshSession.dispose();
+                    throw new Error('Process force-stopped by user');
+                }
                 const username = domain.replace(/[^a-zA-Z0-9]/g, '').substring(0, 8) + Math.random().toString(36).substring(2, 6);
                 const password = config.wpPassword;
                 const accountDetails = { domain, username, password, plan: 'default' };
@@ -194,25 +250,38 @@ async function processDomain(processId, domainEntry, config, whm, cloudflare, pr
             cpanelAccountInfo = { user: cpanelUser, pass: cpanelPass };
 
             // Connect SSH for all subsequent operations
+            if (status && status.status === 'stopped') {
+                await sshSession.dispose();
+                throw new Error('Process force-stopped by user');
+            }
             await sshSession.connect();
 
             // Step 3: Perform SSH tasks
+            if (status && status.status === 'stopped') {
+                await sshSession.dispose();
+                throw new Error('Process force-stopped by user');
+            }
             const adsenseIdForHeader = (adsenseIdNumbers && !adsenseIdNumbers.includes('#')) ? adsenseIdNumbers : null;
             let sshResult;
+            const domainLc = domain.toLowerCase();
             if (cloneMasterDomain) {
                 log('info', 'Stage: Cloning and configuring WordPress...');
-                sshResult = await sshSession.runAllInOneSshTasks(domain, config.wpPassword, adsenseIdForHeader, config.masterCloneDomain);
+                sshResult = await sshSession.runAllInOneSshTasks(domainLc, config.wpPassword, adsenseIdForHeader, config.masterCloneDomain.toLowerCase());
             } else {
                 log('info', 'Stage: Configuring WordPress (cloning skipped)...');
-                sshResult = await sshSession.runSshTasksWithoutCloning(domain, config.wpPassword, adsenseIdForHeader);
+                sshResult = await sshSession.runSshTasksWithoutCloning(domainLc, config.wpPassword, adsenseIdForHeader);
             }
 
             // Step 4: Create ads.txt
+            if (status && status.status === 'stopped') {
+                await sshSession.dispose();
+                throw new Error('Process force-stopped by user');
+            }
             if (adsenseIdNumbers) {
                 log('info', 'Stage: Creating ads.txt file...');
                 const adsenseIds = adsenseIdNumbers.split('#');
                 const adsTxtContent = adsenseIds.map(id => `google.com, pub-${id}, DIRECT, f08c47fec0942fa0`).join('\n');
-                await sshSession.createAdsTxtFile(domain, adsTxtContent);
+                await sshSession.createAdsTxtFile(domainLc, adsTxtContent);
                 log('info', 'ads.txt file created/updated successfully.');
             }
 

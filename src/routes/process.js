@@ -280,4 +280,47 @@ router.get('/:processId/accounts', (req, res) => {
   }
 });
 
+/**
+ * POST /api/process/:processId/stop
+ * Stop a running process
+ */
+router.post('/:processId/stop', (req, res) => {
+  try {
+    const { processId } = req.params;
+    if (!req.processStateManager) {
+      return res.status(500).json({
+        success: false,
+        error: 'Process state manager not available',
+        code: 'SERVICE_UNAVAILABLE'
+      });
+    }
+    const status = req.processStateManager.getProcessStatus(processId);
+    if (!status) {
+      return res.status(404).json({
+        success: false,
+        error: 'Process not found',
+        code: 'PROCESS_NOT_FOUND'
+      });
+    }
+    if (!['running', 'processing', 'starting'].includes(status.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Process is not running',
+        code: 'NOT_RUNNING'
+      });
+    }
+    req.processStateManager.stopProcess(processId);
+    res.json({
+      success: true,
+      message: 'Process stopped'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: 'STOP_ERROR'
+    });
+  }
+});
+
 module.exports = router;

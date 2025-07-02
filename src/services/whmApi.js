@@ -8,7 +8,7 @@ class WHMApi {
   constructor(credentials) {
     this.credentials = validateWhmCredentials(credentials);
     this.baseURL = `${this.credentials.ssl ? 'https' : 'http'}://${this.credentials.host}:${this.credentials.port}`;
-    this.timeout = parseInt(process.env.REQUEST_TIMEOUT) || 30000;
+    this.timeout = parseInt(process.env.REQUEST_TIMEOUT) || 60000;
     
     // Create axios instance with custom configuration
     this.client = axios.create({
@@ -242,53 +242,54 @@ class WHMApi {
         // More detailed logging for debugging
         logger.debug(`Checking domain ${domain} against ${response.data.acct.length} existing accounts`);
         
+        const domainNorm = domain.toLowerCase().trim().replace(/\.$/, '');
         const exists = response.data.acct.some(account => {
-          // Check main domain (exact match)
-          if (account.domain === domain) {
+          // Check main domain (case-insensitive, trim, no trailing dot)
+          if (account.domain && account.domain.toLowerCase().trim().replace(/\.$/, '') === domainNorm) {
             logger.debug(`Domain ${domain} found as main domain for account ${account.user}`);
             return true;
           }
           
-          // Check addon domains (exact match)
+          // Check addon domains (case-insensitive)
           if (account.addon_domains && Array.isArray(account.addon_domains)) {
-            if (account.addon_domains.includes(domain)) {
+            if (account.addon_domains.map(d => d.toLowerCase().trim().replace(/\.$/, '')).includes(domainNorm)) {
               logger.debug(`Domain ${domain} found in addon domains for account ${account.user}`);
               return true;
             }
           } else if (account.addon_domains && typeof account.addon_domains === 'string') {
             // Handle case where addon_domains is a string (comma-separated)
-            const addonList = account.addon_domains.split(',').map(d => d.trim());
-            if (addonList.includes(domain)) {
+            const addonList = account.addon_domains.split(',').map(d => d.toLowerCase().trim().replace(/\.$/, ''));
+            if (addonList.includes(domainNorm)) {
               logger.debug(`Domain ${domain} found in addon domains (string) for account ${account.user}`);
               return true;
             }
           }
           
-          // Check parked domains (exact match)
+          // Check parked domains (case-insensitive)
           if (account.parked_domains && Array.isArray(account.parked_domains)) {
-            if (account.parked_domains.includes(domain)) {
+            if (account.parked_domains.map(d => d.toLowerCase().trim().replace(/\.$/, '')).includes(domainNorm)) {
               logger.debug(`Domain ${domain} found in parked domains for account ${account.user}`);
               return true;
             }
           } else if (account.parked_domains && typeof account.parked_domains === 'string') {
             // Handle case where parked_domains is a string (comma-separated)
-            const parkedList = account.parked_domains.split(',').map(d => d.trim());
-            if (parkedList.includes(domain)) {
+            const parkedList = account.parked_domains.split(',').map(d => d.toLowerCase().trim().replace(/\.$/, ''));
+            if (parkedList.includes(domainNorm)) {
               logger.debug(`Domain ${domain} found in parked domains (string) for account ${account.user}`);
               return true;
             }
           }
           
-          // Check subdomains (exact match)
+          // Check subdomains (case-insensitive)
           if (account.sub_domains && Array.isArray(account.sub_domains)) {
-            if (account.sub_domains.includes(domain)) {
+            if (account.sub_domains.map(d => d.toLowerCase().trim().replace(/\.$/, '')).includes(domainNorm)) {
               logger.debug(`Domain ${domain} found in subdomains for account ${account.user}`);
               return true;
             }
           } else if (account.sub_domains && typeof account.sub_domains === 'string') {
             // Handle case where sub_domains is a string (comma-separated)
-            const subList = account.sub_domains.split(',').map(d => d.trim());
-            if (subList.includes(domain)) {
+            const subList = account.sub_domains.split(',').map(d => d.toLowerCase().trim().replace(/\.$/, ''));
+            if (subList.includes(domainNorm)) {
               logger.debug(`Domain ${domain} found in subdomains (string) for account ${account.user}`);
               return true;
             }

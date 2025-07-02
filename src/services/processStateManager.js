@@ -300,6 +300,25 @@ class ProcessStateManager {
       timestamp: new Date().toISOString()
     };
   }
+
+  /**
+   * Stop a process (mark as stopped)
+   */
+  stopProcess(processId) {
+    const process = this.activeProcesses.get(processId);
+    if (!process) {
+      logger.warn('Attempted to stop non-existent process:', processId);
+      return;
+    }
+    process.status = 'stopped';
+    process.stoppedAt = new Date();
+    this.addLog(processId, {
+      level: 'warn',
+      message: 'Process stopped by user',
+      data: { processId }
+    });
+    logger.warn('Process stopped:', { processId });
+  }
 }
 
 module.exports = ProcessStateManager;

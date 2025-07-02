@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         skippedCount: document.getElementById('skipped-count'),
         logs: document.getElementById('logs'),
         autoScrollLogs: document.getElementById('autoScrollLogs'),
+        stopProcessButton: document.getElementById('stop-process-button'),
         // Results
         successfulAccountsSection: document.getElementById('successfulAccountsSection'),
         failedAccountsSection: document.getElementById('failedAccountsSection'),
@@ -275,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
             processId = result.processId;
             elements.monitorSection.classList.remove('hidden');
             elements.totalCount.textContent = domains.length;
+            elements.stopProcessButton.style.display = '';
             startPolling();
         } catch (error) {
             alert(`Error: ${error.message}`);
@@ -324,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function stopPolling() {
         clearInterval(pollingInterval);
         pollingInterval = null;
+        elements.stopProcessButton.style.display = 'none';
         enableForm();
     }
 
@@ -356,6 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function displayFinalResults(status) {
         updateLogs(status.logs || []);
+        elements.stopProcessButton.style.display = 'none';
         // appendLog('\n--- PROCESS COMPLETE ---'); // Per user request, this is removed to keep logs visible.
         
         const results = status.results || { success: [], failed: [] };
@@ -484,6 +488,25 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
     }
+
+    // --- Stop Process Button Logic ---
+    elements.stopProcessButton.addEventListener('click', async () => {
+        if (!processId) return;
+        elements.stopProcessButton.disabled = true;
+        elements.stopProcessButton.textContent = 'Stopping...';
+        try {
+            const response = await fetch(`/api/process/${processId}/stop`, {
+                method: 'POST'
+            });
+            if (!response.ok) throw new Error('Failed to stop process');
+            appendLog('Process stop requested. Waiting for current tasks to finish...');
+        } catch (error) {
+            appendLog('Failed to stop process: ' + error.message);
+        } finally {
+            elements.stopProcessButton.disabled = false;
+            elements.stopProcessButton.textContent = 'Stop';
+        }
+    });
 
     // --- Initializer ---
     loadWhmCredentials();
