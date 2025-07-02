@@ -185,6 +185,43 @@ class BulkCreator {
         results: finalData.results
       });
 
+      // Always execute /scripts/updateuserdomains after all bulk is done (via SSH if possible)
+      try {
+        const { SshSession } = require('./sshService');
+        const sshConfig = finalData.requestData.sshCredentials || finalData.requestData.whmCredentials?.ssh; // Try to get SSH config
+        if (sshConfig) {
+          this.processStateManager.addLog(processId, {
+            level: 'info',
+            message: '--- Running /scripts/updateuserdomains ---'
+          });
+          const sshSessionUpdate = new SshSession(sshConfig);
+          await sshSessionUpdate.connect();
+          const updateResult = await sshSessionUpdate.ssh.execCommand('/scripts/updateuserdomains');
+          if (updateResult.code === 0) {
+            this.processStateManager.addLog(processId, {
+              level: 'info',
+              message: '/scripts/updateuserdomains executed successfully.'
+            });
+          } else {
+            this.processStateManager.addLog(processId, {
+              level: 'error',
+              message: `/scripts/updateuserdomains failed. STDOUT: ${updateResult.stdout || 'N/A'}, STDERR: ${updateResult.stderr || 'N/A'}`
+            });
+          }
+          await sshSessionUpdate.dispose();
+        } else {
+          this.processStateManager.addLog(processId, {
+            level: 'warn',
+            message: 'SSH credentials not provided. Skipping /scripts/updateuserdomains execution.'
+          });
+        }
+      } catch (e) {
+        this.processStateManager.addLog(processId, {
+          level: 'error',
+          message: `Error running /scripts/updateuserdomains: ${e.message}`
+        });
+      }
+
     } catch (error) {
       this.processStateManager.failProcess(processId, error);
       throw error;

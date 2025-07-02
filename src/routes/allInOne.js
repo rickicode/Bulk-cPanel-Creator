@@ -53,4 +53,34 @@ router.post('/start', (req, res) => {
     res.status(202).json({ message: 'Process started', processId });
 });
 
+/**
+ * Manual endpoint to run /scripts/updateuserdomains via SSH.
+ * Expects SSH credentials in the body (host, username, password).
+ */
+router.post('/update-user-domains', async (req, res) => {
+    const { ssh } = req.body;
+    if (!ssh || !ssh.host || !ssh.username || !ssh.password) {
+        return res.status(400).json({ success: false, message: 'Missing SSH credentials.' });
+    }
+    try {
+        const { SshSession } = require('../services/sshService');
+        const sshSession = new SshSession(ssh);
+        await sshSession.connect();
+        const updateResult = await sshSession.ssh.execCommand('/scripts/updateuserdomains');
+        await sshSession.dispose();
+        if (updateResult.code === 0) {
+            return res.json({ success: true, message: '/scripts/updateuserdomains executed successfully.', stdout: updateResult.stdout });
+        } else {
+            return res.status(500).json({
+                success: false,
+                message: `/scripts/updateuserdomains failed.`,
+                stdout: updateResult.stdout,
+                stderr: updateResult.stderr
+            });
+        }
+    } catch (e) {
+        return res.status(500).json({ success: false, message: `Error running /scripts/updateuserdomains: ${e.message}` });
+    }
+});
+
 module.exports = router;

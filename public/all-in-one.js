@@ -1,3 +1,4 @@
+// All-in-One Bulk Processor (No Polling Version)
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Element References ---
     const elements = {
@@ -41,10 +42,10 @@ document.addEventListener('DOMContentLoaded', () => {
         failedResults: document.getElementById('failed-results'),
         exportSuccessBtn: document.getElementById('export-success-txt'),
         exportFailedBtn: document.getElementById('export-failed-txt'),
+        refreshStatusBtn: null // will be created below
     };
 
     let processId = null;
-    let pollingInterval = null;
     let lastLogCount = 0;
 
     // --- Storage Service for localStorage Management ---
@@ -243,7 +244,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
     elements.startProcessButton.addEventListener('click', async () => {
         const domains = elements.domainList.value.trim().split('\n').filter(line => line.trim() !== '');
         if (domains.length === 0) return alert('Domain list cannot be empty.');
@@ -277,57 +277,65 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.monitorSection.classList.remove('hidden');
             elements.totalCount.textContent = domains.length;
             elements.stopProcessButton.style.display = '';
-            startPolling();
+            // No polling started here
         } catch (error) {
             alert(`Error: ${error.message}`);
             enableForm();
         }
     });
 
-    elements.exportSuccessBtn.addEventListener('click', () => downloadResults(elements.successResults, 'successful_operations.txt'));
-    elements.exportFailedBtn.addEventListener('click', () => downloadResults(elements.failedResults, 'failed_operations.txt'));
+    elements.exportSuccessBtn && elements.exportSuccessBtn.addEventListener('click', () => downloadResults(elements.successResults, 'successful_operations.txt'));
+    elements.exportFailedBtn && elements.exportFailedBtn.addEventListener('click', () => downloadResults(elements.failedResults, 'failed_operations.txt'));
 
-    // --- Main Functions ---
-    function startPolling() {
-        if (pollingInterval) clearInterval(pollingInterval);
-        const poll = async () => {
+    // --- Manual Status Refresh Button ---
+    function createRefreshStatusButton() {
+        const btn = document.createElement('button');
+        btn.textContent = 'Refresh Status';
+        btn.className = 'btn btn-outline btn-sm';
+        btn.style.marginLeft = '12px';
+        btn.addEventListener('click', async () => {
             if (!processId) return;
-            try {
-                const [statusRes, logsRes] = await Promise.all([
-                    fetch(`/api/process/${processId}/status`),
-                    fetch(`/api/process/${processId}/logs`)
-                ]);
-                if (statusRes.status === 404) {
-                    appendLog('Process not found on server.');
-                    return stopPolling();
-                }
-                const statusResult = await statusRes.json();
-                const logsResult = await logsRes.json();
-                if (statusResult.success && statusResult.data) {
-                    const status = statusResult.data;
-                    updateProgress(status.progress);
-                    if (logsResult.success && logsResult.data.logs) {
-                        updateLogs(logsResult.data.logs);
-                    }
-                    if (status.status === 'completed' || status.status === 'failed') {
-                        stopPolling();
-                        displayFinalResults(status);
-                    }
-                }
-            } catch (error) {
-                appendLog('Error fetching status. Polling stopped.');
-                stopPolling();
-            }
-        };
-        pollingInterval = setInterval(poll, 2000);
-        poll();
+            await fetchAndDisplayStatus();
+        });
+        return btn;
+    }
+    // Insert refresh button next to stop button
+    elements.refreshStatusBtn = createRefreshStatusButton();
+    const progressInfo = document.querySelector('.progress-info');
+    if (progressInfo) {
+        progressInfo.appendChild(elements.refreshStatusBtn);
     }
 
-    function stopPolling() {
-        clearInterval(pollingInterval);
-        pollingInterval = null;
-        elements.stopProcessButton.style.display = 'none';
-        enableForm();
+    // --- Fetch and Display Status/Logs Once ---
+    async function fetchAndDisplayStatus() {
+        if (!processId) return;
+        try {
+            const [statusRes, logsRes] = await Promise.all([
+                fetch(`/api/process/${processId}/status`),
+                fetch(`/api/process/${processId}/logs`)
+            ]);
+            if (statusRes.status === 404) {
+                appendLog('Process not found on server.');
+                enableForm();
+                return;
+            }
+            const statusResult = await statusRes.json();
+            const logsResult = await logsRes.json();
+            if (statusResult.success && statusResult.data) {
+                const status = statusResult.data;
+                updateProgress(status.progress);
+                if (logsResult.success && logsResult.data.logs) {
+                    updateLogs(logsResult.data.logs);
+                }
+                if (status.status === 'completed' || status.status === 'failed') {
+                    displayFinalResults(status);
+                    enableForm();
+                }
+            }
+        } catch (error) {
+            appendLog('Error fetching status.');
+            enableForm();
+        }
     }
 
     function updateProgress(progress) {
@@ -352,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         lastLogCount = logs.length;
 
-        if (elements.autoScrollLogs.checked) {
+        if (elements.autoScrollLogs && elements.autoScrollLogs.checked) {
             elements.logs.scrollTop = elements.logs.scrollHeight;
         }
     }
@@ -360,10 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function displayFinalResults(status) {
         updateLogs(status.logs || []);
         elements.stopProcessButton.style.display = 'none';
-        // appendLog('\n--- PROCESS COMPLETE ---'); // Per user request, this is removed to keep logs visible.
-        
         const results = status.results || { success: [], failed: [] };
-        
         elements.successResults.innerHTML = '';
         elements.failedResults.innerHTML = '';
 
@@ -500,6 +505,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!response.ok) throw new Error('Failed to stop process');
             appendLog('Process stop requested. Waiting for current tasks to finish...');
+            // After stopping, fetch status/logs once
+            setTimeout(fetchAndDisplayStatus, 2000); // Give backend time to update status
         } catch (error) {
             appendLog('Failed to stop process: ' + error.message);
         } finally {
@@ -512,4 +519,43 @@ document.addEventListener('DOMContentLoaded', () => {
     loadWhmCredentials();
     setupCloudflareDropdown();
     loadOperationDetails();
+
+    // --- Update User Domains Button Logic ---
+    const updateBtn = document.getElementById('update-user-domains-btn');
+    const updateStatus = document.getElementById('update-user-domains-status');
+    if (updateBtn && updateStatus) {
+        updateBtn.addEventListener('click', async () => {
+            updateStatus.textContent = 'Running /scripts/updateuserdomains...';
+            updateStatus.className = 'status-message neutral';
+            // Collect SSH credentials from form
+            const ssh = {
+                host: elements.whmHost.value,
+                username: elements.whmUser.value,
+                password: elements.whmPassword.value
+            };
+            if (!ssh.host || !ssh.username || !ssh.password) {
+                updateStatus.textContent = 'Please fill in all SSH credentials.';
+                updateStatus.className = 'status-message failure';
+                return;
+            }
+            try {
+                const response = await fetch('/api/all-in-one/update-user-domains', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ssh })
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    updateStatus.textContent = result.message || 'Update user domains executed successfully.';
+                    updateStatus.className = 'status-message success';
+                } else {
+                    updateStatus.textContent = result.message || 'Failed to execute update user domains.';
+                    updateStatus.className = 'status-message failure';
+                }
+            } catch (error) {
+                updateStatus.textContent = 'Error: ' + error.message;
+                updateStatus.className = 'status-message failure';
+            }
+        });
+    }
 });

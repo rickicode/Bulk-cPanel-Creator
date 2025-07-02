@@ -287,6 +287,29 @@ async function processBulkDeletion(processId, whmConfig, domains, cloudflareConf
                 processState.status = 'completed';
                 processState.completed = true;
                 processState.currentDomain = null;
+
+                // Always execute /scripts/updateuserdomains after all bulk deletion is done (via SSH if possible)
+                try {
+                    const { SshSession } = require('../services/sshService');
+                    const sshConfig = processState.whm?.ssh || processState.sshCredentials;
+                    if (sshConfig) {
+                        addLog(processState, '--- Running /scripts/updateuserdomains ---', 'info');
+                        const sshSessionUpdate = new SshSession(sshConfig);
+                        await sshSessionUpdate.connect();
+                        const updateResult = await sshSessionUpdate.ssh.execCommand('/scripts/updateuserdomains');
+                        if (updateResult.code === 0) {
+                            addLog(processState, '/scripts/updateuserdomains executed successfully.', 'info');
+                        } else {
+                            addLog(processState, `/scripts/updateuserdomains failed. STDOUT: ${updateResult.stdout || 'N/A'}, STDERR: ${updateResult.stderr || 'N/A'}`, 'error');
+                        }
+                        await sshSessionUpdate.dispose();
+                    } else {
+                        addLog(processState, 'SSH credentials not provided. Skipping /scripts/updateuserdomains execution.', 'warn');
+                    }
+                } catch (e) {
+                    addLog(processState, `Error running /scripts/updateuserdomains: ${e.message}`, 'error');
+                }
+
                 addLog(processState, `Process completed: ${processState.successful} deleted, ${processState.failed} failed, ${processState.skipped} skipped`, 'info');
             }
         };
