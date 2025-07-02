@@ -277,7 +277,8 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.monitorSection.classList.remove('hidden');
             elements.totalCount.textContent = domains.length;
             elements.stopProcessButton.style.display = '';
-            // No polling started here
+            // Fetch status once after process starts
+            await fetchAndDisplayStatus();
         } catch (error) {
             alert(`Error: ${error.message}`);
             enableForm();
