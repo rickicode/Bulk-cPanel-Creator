@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let processId = null;
     let lastLogCount = 0;
+    let pollingInterval = null;
 
     // --- Storage Service for localStorage Management ---
     const StorageService = {
@@ -277,7 +278,9 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.monitorSection.classList.remove('hidden');
             elements.totalCount.textContent = domains.length;
             elements.stopProcessButton.style.display = '';
-            // Fetch status once after process starts
+            // Start polling every 2 seconds
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(fetchAndDisplayStatus, 2000);
             await fetchAndDisplayStatus();
         } catch (error) {
             alert(`Error: ${error.message}`);
@@ -317,6 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
             if (statusRes.status === 404) {
                 appendLog('Process not found on server.');
+                if (pollingInterval) clearInterval(pollingInterval);
                 enableForm();
                 return;
             }
@@ -330,11 +334,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (status.status === 'completed' || status.status === 'failed') {
                     displayFinalResults(status);
+                    if (pollingInterval) clearInterval(pollingInterval);
                     enableForm();
                 }
             }
         } catch (error) {
             appendLog('Error fetching status.');
+            if (pollingInterval) clearInterval(pollingInterval);
             enableForm();
         }
     }
@@ -508,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
             appendLog('Process stop requested. Waiting for current tasks to finish...');
             // After stopping, fetch status/logs once
             setTimeout(fetchAndDisplayStatus, 2000); // Give backend time to update status
+            if (pollingInterval) clearInterval(pollingInterval);
         } catch (error) {
             appendLog('Failed to stop process: ' + error.message);
         } finally {
