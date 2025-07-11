@@ -144,7 +144,8 @@ class SshSession {
 
         // --- Step 4: Update AdSense ID (only if provided) ---
         if (adsenseIdNumbers) {
-            const headerPath = `/home/${cpanelUser}/public_html/wp-content/themes/superfast/header.php`;
+            const themeName = this.config.themeName || 'superfast'; // Use provided theme or default to 'superfast'
+            const headerPath = `/home/${cpanelUser}/public_html/wp-content/themes/${themeName}/header.php`;
             const checkFileCmd = `if [ -f "${headerPath}" ]; then echo "exists"; fi`;
             const fileCheckResult = await this.ssh.execCommand(checkFileCmd);
             if (fileCheckResult.stdout.trim() === "exists") {
@@ -225,7 +226,8 @@ class SshSession {
 
         // --- Step 4: Update AdSense ID (only if provided) ---
         if (adsenseIdNumbers) {
-            const headerPath = `/home/${cpanelUser}/public_html/wp-content/themes/superfast/header.php`;
+            const themeName = this.config.themeName || 'superfast'; // Use provided theme or default to 'superfast'
+            const headerPath = `/home/${cpanelUser}/public_html/wp-content/themes/${themeName}/header.php`;
             const checkFileCmd = `if [ -f "${headerPath}" ]; then echo "exists"; fi`;
             const fileCheckResult = await this.ssh.execCommand(checkFileCmd);
             if (fileCheckResult.stdout.trim() === "exists") {

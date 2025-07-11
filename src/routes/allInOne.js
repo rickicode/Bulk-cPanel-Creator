@@ -34,7 +34,8 @@ router.post('/start', (req, res) => {
     const ssh = {
         host: whm.host,
         username: whm.username,
-        password: whm.password
+        password: whm.password,
+        themeName: req.body.themeName || 'superfast' // Optional theme name, defaults to 'superfast'
     };
 
     const processId = uuidv4();

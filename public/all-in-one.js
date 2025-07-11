@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cloudflareAccountSelect: document.getElementById('cloudflare-account-select'),
         deleteCloudflareAccountBtn: document.getElementById('delete-cloudflare-account-btn'),
         // Operations
+        themeName: document.getElementById('theme-name'),
         masterCloneDomain: document.getElementById('master-clone-domain'),
         cloneMasterDomain: document.getElementById('clone-master-domain'),
         forceRecreate: document.getElementById('force-recreate'),
@@ -162,6 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
             domainList: elements.domainList.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
             forceRecreate: elements.forceRecreate.checked,
+            themeName: elements.themeName.value,
         };
         StorageService.save('aio_operationDetails', opDetails);
     }
@@ -174,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.domainList.value = opDetails.domainList || '';
             elements.cloneMasterDomain.checked = opDetails.hasOwnProperty('cloneMasterDomain') ? opDetails.cloneMasterDomain : true;
             elements.forceRecreate.checked = opDetails.forceRecreate || false;
+            elements.themeName.value = opDetails.themeName || 'superfast';
         }
     }
     
@@ -201,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Event Listeners ---
-    ['masterCloneDomain', 'newWpPassword', 'domainList'].forEach(id => {
+    ['masterCloneDomain', 'newWpPassword', 'domainList', 'themeName'].forEach(id => {
         elements[id].addEventListener('input', saveOperationDetails);
     });
 
@@ -259,6 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             wpPassword: elements.newWpPassword.value,
             masterCloneDomain: elements.masterCloneDomain.value,
             cloneMasterDomain: elements.cloneMasterDomain.checked,
+            themeName: elements.themeName.value,
             forceRecreate: elements.forceRecreate.checked,
             domains: domains,
         };
